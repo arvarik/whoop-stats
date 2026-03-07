@@ -1,0 +1,26 @@
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    environment:
+      POSTGRES_DB: whoop_stats
+      POSTGRES_USER: whoop_user
+      POSTGRES_PASSWORD: secretpassword
+    # Do not expose port 5432 to the host publicly (only local loopback interface)
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+    networks:
+      - internal_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whoop_user -d whoop_stats"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  internal_network:
+    internal: false # Requires routing locally, but limits other host exposure because of 127.0.0.1 port binding
+
+volumes:
+  timescaledb-data:

@@ -1,0 +1,312 @@
+definitions:
+  github_com_arvind_whoop-stats_internal_db.Cycle:
+    properties:
+      average_heart_rate:
+        type: integer
+      created_at:
+        type: string
+      end_time:
+        type: string
+      id:
+        type: integer
+      kilojoule:
+        type: number
+      max_heart_rate:
+        type: integer
+      start_time:
+        type: string
+      strain:
+        type: number
+      timezone_offset:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  github_com_arvind_whoop-stats_internal_db.Sleep:
+    properties:
+      created_at:
+        type: string
+      disturbance_count:
+        type: integer
+      end_time:
+        type: string
+      id:
+        type: integer
+      nap:
+        type: boolean
+      performance_score:
+        type: number
+      respiratory_rate:
+        type: number
+      sleep_consistency_percentage:
+        type: number
+      sleep_cycle_count:
+        type: integer
+      sleep_debt_milli:
+        type: integer
+      sleep_efficiency_percentage:
+        type: number
+      start_time:
+        type: string
+      timezone_offset:
+        type: string
+      total_awake_time_milli:
+        type: integer
+      total_in_bed_time_milli:
+        type: integer
+      total_light_sleep_time_milli:
+        type: integer
+      total_no_data_time_milli:
+        type: integer
+      total_rem_sleep_time_milli:
+        type: integer
+      total_slow_wave_sleep_time_milli:
+        type: integer
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  github_com_arvind_whoop-stats_internal_db.Workout:
+    properties:
+      altitude_change_meter:
+        type: number
+      altitude_gain_meter:
+        type: number
+      average_heart_rate:
+        type: integer
+      created_at:
+        type: string
+      distance_meter:
+        type: number
+      end_time:
+        type: string
+      id:
+        type: integer
+      kilojoule:
+        type: number
+      max_heart_rate:
+        type: integer
+      percent_recorded:
+        type: number
+      sport_id:
+        type: integer
+      start_time:
+        type: string
+      strain:
+        type: number
+      timezone_offset:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+      zone_five_milli:
+        type: integer
+      zone_four_milli:
+        type: integer
+      zone_one_milli:
+        type: integer
+      zone_three_milli:
+        type: integer
+      zone_two_milli:
+        type: integer
+      zone_zero_milli:
+        type: integer
+    type: object
+  internal_api.ErrorResponse:
+    properties:
+      error:
+        properties:
+          code:
+            type: string
+          message:
+            type: string
+        type: object
+    type: object
+info:
+  contact: {}
+  description: High-performance RESTful API for WHOOP data.
+  title: WHOOP Stats API
+  version: "1.0"
+paths:
+  /api/v1/cycles:
+    get:
+      consumes:
+      - application/json
+      description: Fetches cycles using cursor-based pagination
+      parameters:
+      - description: Cursor timestamp (RFC3339)
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_arvind_whoop-stats_internal_db.Cycle'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get cycles
+      tags:
+      - cycles
+  /api/v1/insights:
+    get:
+      consumes:
+      - application/json
+      description: Fetches daily strain and recovery from continuous aggregates for
+        the last 30 days
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get insights
+      tags:
+      - insights
+  /api/v1/sleeps:
+    get:
+      consumes:
+      - application/json
+      description: Fetches sleeps using cursor-based pagination
+      parameters:
+      - description: Cursor timestamp (RFC3339)
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_arvind_whoop-stats_internal_db.Sleep'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get sleeps
+      tags:
+      - sleeps
+  /api/v1/sync:
+    post:
+      consumes:
+      - application/json
+      description: Enqueues a sync job for the user
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Trigger ad-hoc sync
+      tags:
+      - sync
+  /api/v1/user/profile:
+    get:
+      consumes:
+      - application/json
+      description: Fetches the user profile from the WHOOP API
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get basic profile info
+      tags:
+      - user
+  /api/v1/workouts:
+    get:
+      consumes:
+      - application/json
+      description: Fetches workouts using cursor-based pagination
+      parameters:
+      - description: Cursor timestamp (RFC3339)
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_arvind_whoop-stats_internal_db.Workout'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get workouts
+      tags:
+      - workouts
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

@@ -1,0 +1,525 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "description": "High-performance RESTful API for WHOOP data.",
+        "title": "WHOOP Stats API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "paths": {
+        "/api/v1/cycles": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Fetches cycles using cursor-based pagination",
+                "tags": [
+                    "cycles"
+                ],
+                "summary": "Get cycles",
+                "parameters": [
+                    {
+                        "description": "Cursor timestamp (RFC3339)",
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/github_com_arvind_whoop-stats_internal_db.Cycle"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_api.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_api.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/insights": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Fetches daily strain and recovery from continuous aggregates for the last 30 days",
+                "tags": [
+                    "insights"
+                ],
+                "summary": "Get insights",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_api.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sleeps": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Fetches sleeps using cursor-based pagination",
+                "tags": [
+                    "sleeps"
+                ],
+                "summary": "Get sleeps",
+                "parameters": [
+                    {
+                        "description": "Cursor timestamp (RFC3339)",
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/github_com_arvind_whoop-stats_internal_db.Sleep"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_api.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_api.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sync": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Enqueues a sync job for the user",
+                "tags": [
+                    "sync"
+                ],
+                "summary": "Trigger ad-hoc sync",
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_api.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_api.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/user/profile": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Fetches the user profile from the WHOOP API",
+                "tags": [
+                    "user"
+                ],
+                "summary": "Get basic profile info",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_api.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_api.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/workouts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Fetches workouts using cursor-based pagination",
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Get workouts",
+                "parameters": [
+                    {
+                        "description": "Cursor timestamp (RFC3339)",
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/github_com_arvind_whoop-stats_internal_db.Workout"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_api.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_api.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "apiKey",
+                "name": "Authorization",
+                "in": "header"
+            }
+        },
+        "schemas": {
+            "github_com_arvind_whoop-stats_internal_db.Cycle": {
+                "type": "object",
+                "properties": {
+                    "average_heart_rate": {
+                        "type": "integer"
+                    },
+                    "created_at": {
+                        "type": "string"
+                    },
+                    "end_time": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "integer"
+                    },
+                    "kilojoule": {
+                        "type": "number"
+                    },
+                    "max_heart_rate": {
+                        "type": "integer"
+                    },
+                    "start_time": {
+                        "type": "string"
+                    },
+                    "strain": {
+                        "type": "number"
+                    },
+                    "timezone_offset": {
+                        "type": "string"
+                    },
+                    "updated_at": {
+                        "type": "string"
+                    },
+                    "user_id": {
+                        "type": "string"
+                    }
+                }
+            },
+            "github_com_arvind_whoop-stats_internal_db.Sleep": {
+                "type": "object",
+                "properties": {
+                    "created_at": {
+                        "type": "string"
+                    },
+                    "disturbance_count": {
+                        "type": "integer"
+                    },
+                    "end_time": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "integer"
+                    },
+                    "nap": {
+                        "type": "boolean"
+                    },
+                    "performance_score": {
+                        "type": "number"
+                    },
+                    "respiratory_rate": {
+                        "type": "number"
+                    },
+                    "sleep_consistency_percentage": {
+                        "type": "number"
+                    },
+                    "sleep_cycle_count": {
+                        "type": "integer"
+                    },
+                    "sleep_debt_milli": {
+                        "type": "integer"
+                    },
+                    "sleep_efficiency_percentage": {
+                        "type": "number"
+                    },
+                    "start_time": {
+                        "type": "string"
+                    },
+                    "timezone_offset": {
+                        "type": "string"
+                    },
+                    "total_awake_time_milli": {
+                        "type": "integer"
+                    },
+                    "total_in_bed_time_milli": {
+                        "type": "integer"
+                    },
+                    "total_light_sleep_time_milli": {
+                        "type": "integer"
+                    },
+                    "total_no_data_time_milli": {
+                        "type": "integer"
+                    },
+                    "total_rem_sleep_time_milli": {
+                        "type": "integer"
+                    },
+                    "total_slow_wave_sleep_time_milli": {
+                        "type": "integer"
+                    },
+                    "updated_at": {
+                        "type": "string"
+                    },
+                    "user_id": {
+                        "type": "string"
+                    }
+                }
+            },
+            "github_com_arvind_whoop-stats_internal_db.Workout": {
+                "type": "object",
+                "properties": {
+                    "altitude_change_meter": {
+                        "type": "number"
+                    },
+                    "altitude_gain_meter": {
+                        "type": "number"
+                    },
+                    "average_heart_rate": {
+                        "type": "integer"
+                    },
+                    "created_at": {
+                        "type": "string"
+                    },
+                    "distance_meter": {
+                        "type": "number"
+                    },
+                    "end_time": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "integer"
+                    },
+                    "kilojoule": {
+                        "type": "number"
+                    },
+                    "max_heart_rate": {
+                        "type": "integer"
+                    },
+                    "percent_recorded": {
+                        "type": "number"
+                    },
+                    "sport_id": {
+                        "type": "integer"
+                    },
+                    "start_time": {
+                        "type": "string"
+                    },
+                    "strain": {
+                        "type": "number"
+                    },
+                    "timezone_offset": {
+                        "type": "string"
+                    },
+                    "updated_at": {
+                        "type": "string"
+                    },
+                    "user_id": {
+                        "type": "string"
+                    },
+                    "zone_five_milli": {
+                        "type": "integer"
+                    },
+                    "zone_four_milli": {
+                        "type": "integer"
+                    },
+                    "zone_one_milli": {
+                        "type": "integer"
+                    },
+                    "zone_three_milli": {
+                        "type": "integer"
+                    },
+                    "zone_two_milli": {
+                        "type": "integer"
+                    },
+                    "zone_zero_milli": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "internal_api.ErrorResponse": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "type": "string"
+                            },
+                            "message": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,23 @@
+# Build stage
+FROM golang:1.22-alpine AS builder
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+# Build statically linked binary
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o whoop-stats cmd/server/main.go
+
+# Final stage
+FROM alpine:latest
+
+# Create non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
+WORKDIR /app
+COPY --from=builder /app/whoop-stats .
+
+EXPOSE 8080
+CMD ["./whoop-stats"]

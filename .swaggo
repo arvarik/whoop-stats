@@ -1,0 +1,6 @@
+replace github.com/jackc/pgx/v5/pgtype.Timestamptz string
+replace github.com/jackc/pgx/v5/pgtype.UUID string
+replace github.com/jackc/pgx/v5/pgtype.Interval string
+replace github.com/jackc/pgx/v5/pgtype.Float4 number
+replace github.com/jackc/pgx/v5/pgtype.Int4 integer
+replace github.com/jackc/pgx/v5/pgtype.Bool boolean

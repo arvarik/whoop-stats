@@ -1,0 +1,28 @@
+# Secrets
+.env
+.env.local
+.whoop_token.json
+
+# Binaries
+bin/
+whoop-stats
+
+# Go workspaces
+go.work
+go.work.sum
+
+# Frontend
+web/.next/
+web/node_modules/
+web/out/
+web/build/
+web/.env.local
+web/.env.development.local
+web/.env.test.local
+web/.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
