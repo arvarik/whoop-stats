@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,10 +61,25 @@ func runMigrations(t *testing.T, pool *pgxpool.Pool) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	_, err = pool.Exec(ctx, string(upSQL1))
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, string(upSQL2))
-	require.NoError(t, err)
+
+	// Split migration files by semicolon because pgx executes multiple statements in an implicit transaction, 
+	// and TimescaleDB's CREATE MATERIALIZED VIEW WITH DATA cannot run inside a transaction block.
+	executeSQLStmts(t, ctx, pool, string(upSQL1))
+	executeSQLStmts(t, ctx, pool, string(upSQL2))
+}
+
+func executeSQLStmts(t *testing.T, ctx context.Context, pool *pgxpool.Pool, sql string) {
+	// A naive split on semicolon. This assumes no semicolons inside string literals.
+	// This is sufficient for our specific simple migration files.
+	stmts := strings.Split(sql, ";")
+	for _, stmt := range stmts {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		_, err := pool.Exec(ctx, stmt)
+		require.NoError(t, err, "Failed to execute statement: %s", stmt)
+	}
 }
 
 func TestStorage_UpsertCycleIdempotency(t *testing.T) {
