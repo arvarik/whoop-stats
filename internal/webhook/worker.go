@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/arvind/whoop-go/whoop"
+	"github.com/arvarik/whoop-go/whoop"
 	"github.com/arvind/whoop-stats/internal/auth"
 	"github.com/arvind/whoop-stats/internal/db"
 	"github.com/arvind/whoop-stats/internal/storage"

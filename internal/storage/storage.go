@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"strconv"
 
-	"github.com/arvind/whoop-go/whoop"
+	"github.com/arvarik/whoop-go/whoop"
 	"github.com/arvind/whoop-stats/internal/db"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"

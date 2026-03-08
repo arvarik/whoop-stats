@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/arvind/whoop-go/whoop"
+	"github.com/arvarik/whoop-go/whoop"
 	"github.com/arvind/whoop-stats/internal/config"
 	"github.com/arvind/whoop-stats/internal/crypto"
 	"github.com/arvind/whoop-stats/internal/db"
