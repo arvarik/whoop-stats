@@ -9,10 +9,20 @@ A premium, high-performance, open-source dashboard and ingestion engine for your
 ## Features
 
 *   **Dual-Mode Ingestion (Webhook & Poller):** Run the backend in Webhook mode (the "Inbox Pattern") for real-time updates, or in Poller mode to aggressively scrape the API on a configurable schedule.
+*   **Complete Data Coverage:** Tracks all available WHOOP API data, including:
+    *   **Cycles:** Physiological cycles with strain and heart rate metrics.
+    *   **Sleeps:** Detailed sleep stage breakdowns, consistency, and efficiency.
+    *   **Recoveries:** Daily recovery scores, RHR, HRV, SPO2, and skin temperature.
+    *   **Workouts:** Full workout details with sport-specific metrics and HR zone durations.
+    *   **User Profiles:** Basic profile information and body measurements (height, weight, max HR).
 *   **Continuous Aggregates:** Postgres/TimescaleDB materialized views natively pre-compute 30-day strain and recovery trends for `O(1)` read performance.
 *   **Linear-Inspired Dashboard:** A hyper-snappy Next.js 16 (App Router) interface using Tailwind CSS v4, Framer Motion, and Glassmorphism.
 *   **Interactive Visualizations:** Deep dive into sleep stages, HR zones, and custom Recharts with macOS-style tooltips. Features a dedicated UI **"Sync" Button** to trigger ad-hoc backend synchronization and immediately refresh the dashboard.
 *   **Fully Typed:** 100% end-to-end type safety from the Postgres schema to the Next.js UI using `sqlc` and `openapi-typescript`.
+*   **SSD Wear Protection:** Engineered for 24/7 homelab usage on consumer SSDs:
+    *   **RAM-Backed Logs:** Ephemeral data (`/tmp`, `/var/log`) is mounted to `tmpfs` (RAM) in Docker.
+    *   **Efficient Logging:** Uses the Docker `local` logging driver with binary compression to minimize Write Amplification (WA).
+    *   **Dynamic Log Levels:** Completely silence polling chatter via the `LOG_LEVEL` environment variable.
 
 ---
 
@@ -38,6 +48,9 @@ In this mode, the backend spins up concurrent background workers that aggressive
 export POLL_INTERVAL_CYCLE="4h"
 export POLL_INTERVAL_WORKOUT="30m"
 export POLL_INTERVAL_SLEEP="1h"
+export POLL_INTERVAL_SLEEP_OFFPEAK="4h"
+export POLL_INTERVAL_PROFILE="24h"
+export LOG_LEVEL="info" # debug, info, warn, error
 ```
 
 ```mermaid

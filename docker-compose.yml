@@ -1,26 +1,63 @@
 services:
   timescaledb:
     image: timescale/timescaledb:latest-pg15
+    container_name: whoop-stats-db
     environment:
-      POSTGRES_DB: whoop_stats
-      POSTGRES_USER: whoop_user
-      POSTGRES_PASSWORD: secretpassword
-    # Do not expose port 5432 to the host publicly (only local loopback interface)
-    ports:
-      - "127.0.0.1:5432:5432"
+      - POSTGRES_DB=whoop_stats
+      - POSTGRES_USER=whoop_user
+      - POSTGRES_PASSWORD=secretpassword
     volumes:
-      - timescaledb-data:/var/lib/postgresql/data
-    networks:
-      - internal_network
+      - ./data/influxdb:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U whoop_user -d whoop_stats"]
       interval: 5s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
 
-networks:
-  internal_network:
-    internal: false # Requires routing locally, but limits other host exposure because of 127.0.0.1 port binding
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: whoop-stats-backend
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgres://whoop_user:secretpassword@timescaledb:5432/whoop_stats?sslmode=disable
+      - SERVER_PORT=8080
+      - LOG_LEVEL=info
+      - POLL_INTERVAL_CYCLE=4h
+      - POLL_INTERVAL_WORKOUT=30m
+      - POLL_INTERVAL_SLEEP=1h
+      - POLL_INTERVAL_SLEEP_OFFPEAK=4h
+      - POLL_INTERVAL_PROFILE=24h
+    ports:
+      - "8082:8080"
+    # Minimize SSD wear by keeping ephemeral data in RAM
+    tmpfs:
+      - /tmp
+      - /var/log
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
 
-volumes:
-  timescaledb-data:
+  frontend:
+    build:
+      context: ./web
+      dockerfile: ../Dockerfile.frontend
+    container_name: whoop-stats-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8082
+    ports:
+      - "3032:3000"
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"

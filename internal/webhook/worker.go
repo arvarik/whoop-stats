@@ -85,6 +85,7 @@ func (w *Worker) processEvent(ctx context.Context, record db.WebhookEvent) error
 	}
 
 	whoopUserIDStr := strconv.Itoa(event.UserID)
+	traceLogger := w.logger.With("trace_id", event.TraceID, "event_type", event.Type, "whoop_user_id", event.UserID)
 
 	client, err := w.authManager.GetClient(ctx, whoopUserIDStr)
 	if err != nil {
@@ -100,6 +101,8 @@ func (w *Worker) processEvent(ctx context.Context, record db.WebhookEvent) error
 		return err
 	}
 
+	traceLogger.Debug("Processing incoming webhook event")
+
 	// Fetch the full object based on type and upsert
 	switch event.Type {
 	case "recovery.updated":
@@ -107,35 +110,43 @@ func (w *Worker) processEvent(ctx context.Context, record db.WebhookEvent) error
 		if err != nil {
 			return fmt.Errorf("invalid object id %s: %w", event.ID, err)
 		}
+		traceLogger.Info("Fetching updated recovery", "cycle_id", objectID)
 		obj, err := client.Recovery.GetByID(ctx, objectID)
 		if err != nil {
 			return err
 		}
-		return w.storage.UpsertRecovery(ctx, w.logger.With("trace_id", event.TraceID), internalUserID, obj)
+		return w.storage.UpsertRecovery(ctx, traceLogger, internalUserID, obj)
+
 	case "cycle.updated":
 		objectID, err := strconv.Atoi(event.ID)
 		if err != nil {
 			return fmt.Errorf("invalid object id %s: %w", event.ID, err)
 		}
+		traceLogger.Info("Fetching updated cycle", "cycle_id", objectID)
 		obj, err := client.Cycle.GetByID(ctx, objectID)
 		if err != nil {
 			return err
 		}
-		return w.storage.UpsertCycle(ctx, w.logger.With("trace_id", event.TraceID), internalUserID, obj)
+		return w.storage.UpsertCycle(ctx, traceLogger, internalUserID, obj)
+
 	case "workout.updated":
+		traceLogger.Info("Fetching updated workout", "workout_id", event.ID)
 		obj, err := client.Workout.GetByID(ctx, event.ID)
 		if err != nil {
 			return err
 		}
-		return w.storage.UpsertWorkout(ctx, w.logger.With("trace_id", event.TraceID), internalUserID, obj)
+		return w.storage.UpsertWorkout(ctx, traceLogger, internalUserID, obj)
+
 	case "sleep.updated":
+		traceLogger.Info("Fetching updated sleep", "sleep_id", event.ID)
 		obj, err := client.Sleep.GetByID(ctx, event.ID)
 		if err != nil {
 			return err
 		}
-		return w.storage.UpsertSleep(ctx, w.logger.With("trace_id", event.TraceID), internalUserID, obj)
+		return w.storage.UpsertSleep(ctx, traceLogger, internalUserID, obj)
+
 	default:
-		w.logger.Warn("Unknown webhook event type", "type", event.Type, "trace_id", event.TraceID)
+		traceLogger.Warn("Unknown webhook event type received")
 		return nil // Return nil so we mark it processed and ignore it
 	}
 }

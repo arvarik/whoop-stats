@@ -348,6 +348,9 @@
                     "max_heart_rate": {
                         "type": "integer"
                     },
+                    "score_state": {
+                        "type": "string"
+                    },
                     "start_time": {
                         "type": "string"
                     },
@@ -368,8 +371,14 @@
             "github_com_arvind_whoop-stats_internal_db.Sleep": {
                 "type": "object",
                 "properties": {
+                    "baseline_milli": {
+                        "type": "integer"
+                    },
                     "created_at": {
                         "type": "string"
+                    },
+                    "cycle_id": {
+                        "type": "integer"
                     },
                     "disturbance_count": {
                         "type": "integer"
@@ -383,11 +392,20 @@
                     "nap": {
                         "type": "boolean"
                     },
+                    "need_from_recent_nap_milli": {
+                        "type": "integer"
+                    },
+                    "need_from_recent_strain_milli": {
+                        "type": "integer"
+                    },
                     "performance_score": {
                         "type": "number"
                     },
                     "respiratory_rate": {
                         "type": "number"
+                    },
+                    "score_state": {
+                        "type": "string"
                     },
                     "sleep_consistency_percentage": {
                         "type": "number"
@@ -468,6 +486,12 @@
                     },
                     "sport_id": {
                         "type": "integer"
+                    },
+                    "sport_name": {
+                        "type": "string"
+                    },
+                    "score_state": {
+                        "type": "string"
                     },
                     "start_time": {
                         "type": "string"

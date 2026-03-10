@@ -21,10 +21,12 @@ type Querier interface {
 	GetUserByWhoopID(ctx context.Context, whoopUserID string) (User, error)
 	GetWorkouts(ctx context.Context, arg GetWorkoutsParams) ([]Workout, error)
 	UpdateWebhookEventStatus(ctx context.Context, arg UpdateWebhookEventStatusParams) error
+	UpsertBodyMeasurement(ctx context.Context, arg UpsertBodyMeasurementParams) error
 	UpsertCycle(ctx context.Context, arg UpsertCycleParams) error
 	UpsertRecovery(ctx context.Context, arg UpsertRecoveryParams) error
 	UpsertSleep(ctx context.Context, arg UpsertSleepParams) error
 	UpsertUser(ctx context.Context, arg UpsertUserParams) (User, error)
+	UpsertUserProfile(ctx context.Context, arg UpsertUserProfileParams) error
 	UpsertWorkout(ctx context.Context, arg UpsertWorkoutParams) error
 }
 

@@ -15,9 +15,28 @@ WHERE id = $1 LIMIT 1;
 SELECT * FROM users
 WHERE whoop_user_id = $1 LIMIT 1;
 
+-- name: UpsertUserProfile :exec
+INSERT INTO user_profiles (id, whoop_user_id, email, first_name, last_name, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (id) DO UPDATE SET
+    whoop_user_id = EXCLUDED.whoop_user_id,
+    email = EXCLUDED.email,
+    first_name = EXCLUDED.first_name,
+    last_name = EXCLUDED.last_name,
+    updated_at = EXCLUDED.updated_at;
+
+-- name: UpsertBodyMeasurement :exec
+INSERT INTO body_measurements (id, height_meter, weight_kilogram, max_heart_rate, updated_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (id) DO UPDATE SET
+    height_meter = EXCLUDED.height_meter,
+    weight_kilogram = EXCLUDED.weight_kilogram,
+    max_heart_rate = EXCLUDED.max_heart_rate,
+    updated_at = EXCLUDED.updated_at;
+
 -- name: UpsertCycle :exec
-INSERT INTO cycles (id, user_id, start_time, end_time, timezone_offset, strain, kilojoule, average_heart_rate, max_heart_rate, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+INSERT INTO cycles (id, user_id, start_time, end_time, timezone_offset, strain, kilojoule, average_heart_rate, max_heart_rate, score_state, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
 ON CONFLICT (id, start_time) DO UPDATE SET
     end_time = EXCLUDED.end_time,
     timezone_offset = EXCLUDED.timezone_offset,
@@ -25,11 +44,12 @@ ON CONFLICT (id, start_time) DO UPDATE SET
     kilojoule = EXCLUDED.kilojoule,
     average_heart_rate = EXCLUDED.average_heart_rate,
     max_heart_rate = EXCLUDED.max_heart_rate,
+    score_state = EXCLUDED.score_state,
     updated_at = NOW();
 
 -- name: UpsertRecovery :exec
-INSERT INTO recoveries (id, user_id, start_time, timezone_offset, recovery_score, resting_heart_rate, hrv_rmssd_milli, spo2_percentage, skin_temp_celsius, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+INSERT INTO recoveries (id, user_id, start_time, timezone_offset, recovery_score, resting_heart_rate, hrv_rmssd_milli, spo2_percentage, skin_temp_celsius, sleep_id, score_state, user_calibrating, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
 ON CONFLICT (id, start_time) DO UPDATE SET
     timezone_offset = EXCLUDED.timezone_offset,
     recovery_score = EXCLUDED.recovery_score,
@@ -37,11 +57,14 @@ ON CONFLICT (id, start_time) DO UPDATE SET
     hrv_rmssd_milli = EXCLUDED.hrv_rmssd_milli,
     spo2_percentage = EXCLUDED.spo2_percentage,
     skin_temp_celsius = EXCLUDED.skin_temp_celsius,
+    sleep_id = EXCLUDED.sleep_id,
+    score_state = EXCLUDED.score_state,
+    user_calibrating = EXCLUDED.user_calibrating,
     updated_at = NOW();
 
 -- name: UpsertSleep :exec
-INSERT INTO sleeps (id, user_id, start_time, end_time, timezone_offset, performance_score, nap, respiratory_rate, sleep_consistency_percentage, sleep_efficiency_percentage, sleep_debt_milli, total_in_bed_time_milli, total_awake_time_milli, total_no_data_time_milli, total_light_sleep_time_milli, total_slow_wave_sleep_time_milli, total_rem_sleep_time_milli, sleep_cycle_count, disturbance_count, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW())
+INSERT INTO sleeps (id, user_id, start_time, end_time, timezone_offset, performance_score, nap, respiratory_rate, sleep_consistency_percentage, sleep_efficiency_percentage, sleep_debt_milli, total_in_bed_time_milli, total_awake_time_milli, total_no_data_time_milli, total_light_sleep_time_milli, total_slow_wave_sleep_time_milli, total_rem_sleep_time_milli, sleep_cycle_count, disturbance_count, cycle_id, score_state, baseline_milli, need_from_recent_strain_milli, need_from_recent_nap_milli, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, NOW(), NOW())
 ON CONFLICT (id, start_time) DO UPDATE SET
     end_time = EXCLUDED.end_time,
     timezone_offset = EXCLUDED.timezone_offset,
@@ -59,11 +82,16 @@ ON CONFLICT (id, start_time) DO UPDATE SET
     total_rem_sleep_time_milli = EXCLUDED.total_rem_sleep_time_milli,
     sleep_cycle_count = EXCLUDED.sleep_cycle_count,
     disturbance_count = EXCLUDED.disturbance_count,
+    cycle_id = EXCLUDED.cycle_id,
+    score_state = EXCLUDED.score_state,
+    baseline_milli = EXCLUDED.baseline_milli,
+    need_from_recent_strain_milli = EXCLUDED.need_from_recent_strain_milli,
+    need_from_recent_nap_milli = EXCLUDED.need_from_recent_nap_milli,
     updated_at = NOW();
 
 -- name: UpsertWorkout :exec
-INSERT INTO workouts (id, user_id, start_time, end_time, timezone_offset, sport_id, strain, average_heart_rate, max_heart_rate, kilojoule, percent_recorded, distance_meter, altitude_gain_meter, altitude_change_meter, zone_zero_milli, zone_one_milli, zone_two_milli, zone_three_milli, zone_four_milli, zone_five_milli, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), NOW())
+INSERT INTO workouts (id, user_id, start_time, end_time, timezone_offset, sport_id, strain, average_heart_rate, max_heart_rate, kilojoule, percent_recorded, distance_meter, altitude_gain_meter, altitude_change_meter, zone_zero_milli, zone_one_milli, zone_two_milli, zone_three_milli, zone_four_milli, zone_five_milli, sport_name, score_state, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NOW(), NOW())
 ON CONFLICT (id, start_time) DO UPDATE SET
     end_time = EXCLUDED.end_time,
     timezone_offset = EXCLUDED.timezone_offset,
@@ -82,6 +110,8 @@ ON CONFLICT (id, start_time) DO UPDATE SET
     zone_three_milli = EXCLUDED.zone_three_milli,
     zone_four_milli = EXCLUDED.zone_four_milli,
     zone_five_milli = EXCLUDED.zone_five_milli,
+    sport_name = EXCLUDED.sport_name,
+    score_state = EXCLUDED.score_state,
     updated_at = NOW();
 
 -- name: CreateWebhookEvent :one
@@ -127,4 +157,3 @@ ORDER BY bucket ASC;
 SELECT * FROM daily_recovery
 WHERE user_id = $1 AND bucket >= $2
 ORDER BY bucket ASC;
-

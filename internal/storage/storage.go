@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strconv"
+	"time"
 
 	"github.com/arvarik/whoop-go/whoop"
 	"github.com/arvind/whoop-stats/internal/db"
@@ -54,6 +55,7 @@ func (s *Storage) UpsertCycle(ctx context.Context, logger *slog.Logger, userID p
 		Kilojoule:        kilojoule,
 		AverageHeartRate: avgHR,
 		MaxHeartRate:     maxHR,
+		ScoreState:       pgtype.Text{String: cycle.ScoreState, Valid: true},
 	})
 	if err != nil {
 		logger.Error("Failed to upsert cycle", "id", cycle.ID, "err", err)
@@ -73,6 +75,7 @@ func (s *Storage) UpsertSleep(ctx context.Context, logger *slog.Logger, userID p
 
 	var performance, respiratoryRate, sleepConsistency, sleepEfficiency pgtype.Float4
 	var sleepDebt, totalInBed, totalAwake, totalNoData, totalLight, totalSlowWave, totalRem, sleepCycleCount, disturbanceCount pgtype.Int4
+	var baseline, needStrain, needNap pgtype.Int4
 
 	if sleep.Score != nil {
 		performance = pgtype.Float4{Float32: float32(sleep.Score.SleepPerformancePercentage), Valid: true}
@@ -82,6 +85,9 @@ func (s *Storage) UpsertSleep(ctx context.Context, logger *slog.Logger, userID p
 
 		if sleep.Score.SleepNeeded != nil {
 			sleepDebt = pgtype.Int4{Int32: int32(sleep.Score.SleepNeeded.NeedFromSleepDebtMilli), Valid: true}
+			baseline = pgtype.Int4{Int32: int32(sleep.Score.SleepNeeded.BaselineMilli), Valid: true}
+			needStrain = pgtype.Int4{Int32: int32(sleep.Score.SleepNeeded.NeedFromRecentStrainMilli), Valid: true}
+			needNap = pgtype.Int4{Int32: int32(sleep.Score.SleepNeeded.NeedFromRecentNapMilli), Valid: true}
 		}
 
 		if sleep.Score.StageSummary != nil {
@@ -119,6 +125,11 @@ func (s *Storage) UpsertSleep(ctx context.Context, logger *slog.Logger, userID p
 		TotalRemSleepTimeMilli:      totalRem,
 		SleepCycleCount:             sleepCycleCount,
 		DisturbanceCount:            disturbanceCount,
+		CycleID:                     pgtype.Int8{Int64: int64(sleep.CycleID), Valid: true},
+		ScoreState:                  pgtype.Text{String: sleep.ScoreState, Valid: true},
+		BaselineMilli:               baseline,
+		NeedFromRecentStrainMilli:   needStrain,
+		NeedFromRecentNapMilli:      needNap,
 	})
 	if err != nil {
 		logger.Error("Failed to upsert sleep", "id", sleep.ID, "err", err)
@@ -132,15 +143,17 @@ func (s *Storage) UpsertRecovery(ctx context.Context, logger *slog.Logger, userI
 	timezoneOffset := pgtype.Interval{Valid: false}
 
 	var score, rhr, hrv, spo2, skinTemp pgtype.Float4
-
+	var userCalibrating pgtype.Bool
 	if recovery.Score != nil {
 		score = pgtype.Float4{Float32: float32(recovery.Score.RecoveryScore), Valid: true}
 		rhr = pgtype.Float4{Float32: float32(recovery.Score.RestingHeartRate), Valid: true}
 		hrv = pgtype.Float4{Float32: float32(recovery.Score.HrvRmssdMilli), Valid: true}
 		spo2 = pgtype.Float4{Float32: float32(recovery.Score.Spo2Percentage), Valid: true}
 		skinTemp = pgtype.Float4{Float32: float32(recovery.Score.SkinTempCelsius), Valid: true}
+		userCalibrating = pgtype.Bool{Bool: recovery.Score.UserCalibrating, Valid: true}
 	}
 
+	sleepID, _ := strconv.ParseInt(recovery.SleepID, 10, 64)
 	startTime := pgtype.Timestamptz{Time: recovery.CreatedAt, Valid: true}
 
 	err := s.db.UpsertRecovery(ctx, db.UpsertRecoveryParams{
@@ -153,6 +166,9 @@ func (s *Storage) UpsertRecovery(ctx context.Context, logger *slog.Logger, userI
 		HrvRmssdMilli:    hrv,
 		Spo2Percentage:   spo2,
 		SkinTempCelsius:  skinTemp,
+		SleepID:          pgtype.Int8{Int64: sleepID, Valid: recovery.SleepID != ""},
+		ScoreState:       pgtype.Text{String: recovery.ScoreState, Valid: true},
+		UserCalibrating:  userCalibrating,
 	})
 	if err != nil {
 		logger.Error("Failed to upsert recovery", "id", recovery.CycleID, "err", err)
@@ -224,11 +240,47 @@ func (s *Storage) UpsertWorkout(ctx context.Context, logger *slog.Logger, userID
 		ZoneThreeMilli:      z3,
 		ZoneFourMilli:       z4,
 		ZoneFiveMilli:       z5,
+		SportName:           pgtype.Text{String: workout.SportName, Valid: true},
+		ScoreState:          pgtype.Text{String: workout.ScoreState, Valid: true},
 	})
 	if err != nil {
 		logger.Error("Failed to upsert workout", "id", workout.ID, "err", err)
 		return err
 	}
 	logger.Debug("Upserted workout", "id", workout.ID)
+	return nil
+}
+
+func (s *Storage) UpsertUserProfile(ctx context.Context, logger *slog.Logger, userID pgtype.UUID, profile *whoop.BasicProfile) error {
+	err := s.db.UpsertUserProfile(ctx, db.UpsertUserProfileParams{
+		ID:          userID,
+		WhoopUserID: int64(profile.UserID),
+		Email:       pgtype.Text{String: profile.Email, Valid: true},
+		FirstName:   pgtype.Text{String: profile.FirstName, Valid: true},
+		LastName:    pgtype.Text{String: profile.LastName, Valid: true},
+		CreatedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true}, // BasicProfile doesn't have created_at
+		UpdatedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	})
+	if err != nil {
+		logger.Error("Failed to upsert user profile", "userID", userID, "err", err)
+		return err
+	}
+	logger.Debug("Upserted user profile", "userID", userID)
+	return nil
+}
+
+func (s *Storage) UpsertBodyMeasurement(ctx context.Context, logger *slog.Logger, userID pgtype.UUID, measurement *whoop.BodyMeasurement) error {
+	err := s.db.UpsertBodyMeasurement(ctx, db.UpsertBodyMeasurementParams{
+		ID:             userID,
+		HeightMeter:    pgtype.Float4{Float32: float32(measurement.HeightMeter), Valid: true},
+		WeightKilogram: pgtype.Float4{Float32: float32(measurement.WeightKilogram), Valid: true},
+		MaxHeartRate:   pgtype.Int4{Int32: int32(measurement.MaxHeartRate), Valid: true},
+		UpdatedAt:      pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	})
+	if err != nil {
+		logger.Error("Failed to upsert body measurement", "userID", userID, "err", err)
+		return err
+	}
+	logger.Debug("Upserted body measurement", "userID", userID)
 	return nil
 }

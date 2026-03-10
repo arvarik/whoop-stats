@@ -8,6 +8,14 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type BodyMeasurement struct {
+	ID             pgtype.UUID        `json:"id"`
+	HeightMeter    pgtype.Float4      `json:"height_meter"`
+	WeightKilogram pgtype.Float4      `json:"weight_kilogram"`
+	MaxHeartRate   pgtype.Int4        `json:"max_heart_rate"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Cycle struct {
 	ID               int64              `json:"id"`
 	UserID           pgtype.UUID        `json:"user_id"`
@@ -20,6 +28,7 @@ type Cycle struct {
 	Kilojoule        pgtype.Float4      `json:"kilojoule"`
 	AverageHeartRate pgtype.Int4        `json:"average_heart_rate"`
 	MaxHeartRate     pgtype.Int4        `json:"max_heart_rate"`
+	ScoreState       pgtype.Text        `json:"score_state"`
 }
 
 type DailyRecovery struct {
@@ -47,6 +56,9 @@ type Recovery struct {
 	HrvRmssdMilli    pgtype.Float4      `json:"hrv_rmssd_milli"`
 	Spo2Percentage   pgtype.Float4      `json:"spo2_percentage"`
 	SkinTempCelsius  pgtype.Float4      `json:"skin_temp_celsius"`
+	SleepID          pgtype.Int8        `json:"sleep_id"`
+	ScoreState       pgtype.Text        `json:"score_state"`
+	UserCalibrating  pgtype.Bool        `json:"user_calibrating"`
 }
 
 type Sleep struct {
@@ -71,6 +83,11 @@ type Sleep struct {
 	TotalRemSleepTimeMilli      pgtype.Int4        `json:"total_rem_sleep_time_milli"`
 	SleepCycleCount             pgtype.Int4        `json:"sleep_cycle_count"`
 	DisturbanceCount            pgtype.Int4        `json:"disturbance_count"`
+	CycleID                     pgtype.Int8        `json:"cycle_id"`
+	ScoreState                  pgtype.Text        `json:"score_state"`
+	BaselineMilli               pgtype.Int4        `json:"baseline_milli"`
+	NeedFromRecentStrainMilli   pgtype.Int4        `json:"need_from_recent_strain_milli"`
+	NeedFromRecentNapMilli      pgtype.Int4        `json:"need_from_recent_nap_milli"`
 }
 
 type User struct {
@@ -80,6 +97,16 @@ type User struct {
 	EncryptedRefreshToken []byte             `json:"encrypted_refresh_token"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
+type UserProfile struct {
+	ID          pgtype.UUID        `json:"id"`
+	WhoopUserID int64              `json:"whoop_user_id"`
+	Email       pgtype.Text        `json:"email"`
+	FirstName   pgtype.Text        `json:"first_name"`
+	LastName    pgtype.Text        `json:"last_name"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type WebhookEvent struct {
@@ -125,4 +152,6 @@ type Workout struct {
 	ZoneThreeMilli      pgtype.Int4        `json:"zone_three_milli"`
 	ZoneFourMilli       pgtype.Int4        `json:"zone_four_milli"`
 	ZoneFiveMilli       pgtype.Int4        `json:"zone_five_milli"`
+	SportName           pgtype.Text        `json:"sport_name"`
+	ScoreState          pgtype.Text        `json:"score_state"`
 }

@@ -18,6 +18,7 @@ The architecture is split into three core layers: **Database (TimescaleDB)**, **
 *   **Why TimescaleDB?** WHOOP data is inherently time-series (continuous streams of biometric data spanning months or years). Traditional RDBMS struggle with massive time-series scaling. TimescaleDB provides the strict ACID guarantees and relational constraints of Postgres alongside automatic time-partitioning (Hypertables).
 *   **Keyset Pagination over OFFSET/LIMIT:** Querying time-series data using `OFFSET x LIMIT y` becomes exponentially slower as the offset grows. We designed the schema with composite indexes (`user_id, start_time DESC`) to enable cursor-based (keyset) pagination, allowing `O(1)` query speed regardless of dataset size.
 *   **Idempotency via ON CONFLICT:** We enforce `PRIMARY KEY (id, start_time)`. This ensures that if the backend accidentally pulls or processes the same WHOOP cycle multiple times, the `INSERT ... ON CONFLICT DO UPDATE` query guarantees idempotency. No duplicate data is ever recorded.
+*   **Expanded Data Coverage:** Beyond core metrics, the schema tracks detailed sleep stages, recovery markers (SPO2, HRV, Skin Temp), heart rate zone durations for workouts, and athlete-specific data like body measurements and profile information.
 *   **Pre-computed Materialized Views:** Rather than dynamically aggregating 30-day strain trends on every dashboard load, we utilize TimescaleDB's Continuous Aggregates. The database automatically buckets and averages strain and recovery in the background. The frontend dashboard queries these views for instantaneous `O(1)` response times.
 
 ---
@@ -27,7 +28,7 @@ The architecture is split into three core layers: **Database (TimescaleDB)**, **
 ### Components
 *   **HTTP API (go-chi):** A fast, lightweight router handling REST endpoints and middleware (Auth, Rate Limiting, Request IDs).
 *   **Webhook Inbox Pattern:** An asynchronous store-and-forward engine for webhook processing.
-*   **Polling Engine:** A configurable, concurrent scraping worker for local homelab environments.
+*   **Polling Engine:** A configurable, concurrent scraping worker for local homelab environments. Now supports full history synchronization via cursor-based pagination.
 *   **OAuth2 & Crypto Manager:** Secure token rotation and AES-256-GCM encryption layer.
 *   **sqlc DAL:** Type-safe database access layer dynamically generated from SQL queries.
 
@@ -35,6 +36,11 @@ The architecture is split into three core layers: **Database (TimescaleDB)**, **
 *   **Why Go?** Go is chosen for its statically compiled nature, extremely low memory footprint, and native concurrency (`goroutines`), making it perfect for running background polling tasks and high-throughput webhooks concurrently on low-resource homelab servers.
 *   **Webhook Inbox Pattern vs. Synchronous Webhooks:** WHOOP requires webhook endpoints to respond with a `200 OK` almost immediately. If our server halts to query the WHOOP API for the full object and the API is slow, the webhook connection times out, and data is lost. The "Inbox Pattern" safely dumps the raw payload into a Postgres table instantly. A background worker then processes it at a safe, controlled rate with exponential backoff.
 *   **Dual-Mode Ingestion (Poll vs. Webhook):** Not all self-hosters want to open their home networks to the public internet to receive webhooks. The Polling engine was built specifically for homelabs; it makes outbound requests to WHOOP on configurable intervals, cleanly bypassing NAT and firewalls.
+*   **Pagination & History Sync:** To ensure no historical gaps, the Polling engine utilizes WHOOP's cursor-based pagination. It recursively follows `next_token` markers for cycles, sleeps, workouts, and recoveries until the entire dataset is synchronized.
+*   **SSD Wear Protection & Homelab Longevity:** To protect consumer-grade SSDs in 24/7 environments, the backend implements several I/O optimizations:
+    *   **Dynamic Log Levels:** Configurable `LOG_LEVEL` (debug, info, warn, error) allows users to silence non-critical chatter.
+    *   **RAM-Backed Ephemeral Storage:** Ephemeral directories (`/tmp`, `/var/log`) are mounted as `tmpfs` (RAM disks) in Docker.
+    *   **Local Binary Logging:** Uses Docker's `local` logging driver with compression and rotation to minimize the write amplification of traditional JSON-based text logging.
 *   **Application-Level AES-256 Encryption:** OAuth Access and Refresh tokens are highly sensitive. We decrypt and encrypt them in memory on the Go backend using a user-provided 32-byte `ENCRYPTION_KEY`. Tokens rest in the database purely as `BYTEA` ciphertext, ensuring that a database dump does not compromise WHOOP API access.
 *   **Concurrency Control (Advisory Locks):** When the frontend user presses "Sync", an ad-hoc sync job fires. To prevent data race conditions, a Mutex/Advisory Lock is engaged for that specific `user_id`. If the user spam-clicks the button, the API safely returns a `409 Conflict` or `429 Too Many Requests`.
 

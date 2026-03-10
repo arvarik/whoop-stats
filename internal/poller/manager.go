@@ -2,11 +2,13 @@ package poller
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"math/rand"
 	"sync"
 	"time"
 
+	"github.com/arvarik/whoop-go/whoop"
 	"github.com/arvind/whoop-stats/internal/auth"
 	"github.com/arvind/whoop-stats/internal/config"
 	"github.com/arvind/whoop-stats/internal/storage"
@@ -22,6 +24,8 @@ type Poller struct {
 
 	// Rate limiter to respect API limits across all polling goroutines
 	limiter *rate.Limiter
+
+	lastOffpeakSleepPoll time.Time
 }
 
 func NewPoller(cfg *config.Config, authManager *auth.Manager, store *storage.Storage, logger *slog.Logger, whoopUserID string) *Poller {
@@ -45,6 +49,7 @@ func (p *Poller) Start(ctx context.Context) {
 	cycleInterval, _ := time.ParseDuration(p.cfg.PollIntervalCycle)
 	workoutInterval, _ := time.ParseDuration(p.cfg.PollIntervalWorkout)
 	sleepInterval, _ := time.ParseDuration(p.cfg.PollIntervalSleep)
+	profileInterval, _ := time.ParseDuration(p.cfg.PollIntervalProfile)
 
 	var wg sync.WaitGroup
 
@@ -59,8 +64,24 @@ func (p *Poller) Start(ctx context.Context) {
 	startLoop("cycles_recoveries", cycleInterval, p.pollCyclesAndRecoveries)
 	startLoop("workouts", workoutInterval, p.pollWorkouts)
 	startLoop("sleeps", sleepInterval, p.pollSleeps)
+	startLoop("profile", profileInterval, p.pollUserProfile)
 
 	wg.Wait()
+}
+
+func (p *Poller) waitWithLog(ctx context.Context, task string) error {
+	if p.limiter == nil {
+		return nil
+	}
+	start := time.Now()
+	if err := p.limiter.Wait(ctx); err != nil {
+		return err
+	}
+	// If we waited more than 100ms over the expected interval, log it as a throttle event
+	if d := time.Since(start); d > 600*time.Millisecond {
+		p.logger.Debug("Poller throttled by local rate limiter", "task", task, "wait_duration", d)
+	}
+	return nil
 }
 
 func (p *Poller) pollLoop(ctx context.Context, name string, interval time.Duration, pollFunc func(ctx context.Context) error) {
@@ -76,7 +97,6 @@ func (p *Poller) pollLoop(ctx context.Context, name string, interval time.Durati
 		p.logger.Info("Starting poll run", "task", name)
 		if err := pollFunc(ctx); err != nil {
 			p.logger.Error("Poll run failed", "task", name, "error", err, "duration", time.Since(start))
-			// We don't exit, we just wait for the next tick. Exponential backoff could be added for retries within the task.
 		} else {
 			p.logger.Info("Poll run succeeded", "task", name, "duration", time.Since(start))
 		}
@@ -94,10 +114,6 @@ func (p *Poller) pollLoop(ctx context.Context, name string, interval time.Durati
 func (p *Poller) RunAdHocSync(ctx context.Context, whoopUserID string) {
 	p.logger.Info("Starting ad-hoc sync", "user_id", whoopUserID)
 
-	// Since it's ad-hoc for a specific user, temporarily override or just pass down the user.
-	// For simplicity, we just reuse the existing functions since they use p.whoopUserID.
-	// In a real multi-tenant app, the functions would take whoopUserID as a param.
-
 	if err := p.pollCyclesAndRecoveries(ctx); err != nil {
 		p.logger.Error("Ad-hoc sync cycles failed", "error", err)
 	}
@@ -106,6 +122,9 @@ func (p *Poller) RunAdHocSync(ctx context.Context, whoopUserID string) {
 	}
 	if err := p.pollSleeps(ctx); err != nil {
 		p.logger.Error("Ad-hoc sync sleeps failed", "error", err)
+	}
+	if err := p.pollUserProfile(ctx); err != nil {
+		p.logger.Error("Ad-hoc sync profile failed", "error", err)
 	}
 	p.logger.Info("Ad-hoc sync completed", "user_id", whoopUserID)
 }
@@ -120,34 +139,66 @@ func (p *Poller) pollCyclesAndRecoveries(ctx context.Context) error {
 		return err
 	}
 
-	// Respect global rate limit
-	if err := p.limiter.Wait(ctx); err != nil {
+	// Fetch cycles with pagination
+	if err := p.waitWithLog(ctx, "cycles"); err != nil {
 		return err
 	}
-
 	cyclesPage, err := client.Cycle.List(ctx, nil)
-	if err != nil {
-		return err
-	}
-
-	for _, cycle := range cyclesPage.Records {
-		// Use local variable for loop variable pointer issue avoidance is handled correctly in go1.22
-		if err := p.storage.UpsertCycle(ctx, p.logger, internalUserID, &cycle); err != nil {
-			p.logger.Error("Failed to upsert cycle", "id", cycle.ID, "err", err)
-		}
-
-		// Also fetch recovery for this cycle
-		if err := p.limiter.Wait(ctx); err != nil {
+	pageCount := 0
+	totalCycles := 0
+	for {
+		if err != nil {
 			return err
 		}
-
-		recovery, err := client.Recovery.GetByID(ctx, cycle.ID)
-		if err == nil && recovery != nil {
-			if err := p.storage.UpsertRecovery(ctx, p.logger, internalUserID, recovery); err != nil {
-				p.logger.Error("Failed to upsert recovery", "cycle_id", cycle.ID, "err", err)
+		pageCount++
+		totalCycles += len(cyclesPage.Records)
+		p.logger.Debug("Processing cycles page", "page", pageCount, "records", len(cyclesPage.Records))
+		
+		for _, cycle := range cyclesPage.Records {
+			if err := p.storage.UpsertCycle(ctx, p.logger, internalUserID, &cycle); err != nil {
+				p.logger.Error("Failed to upsert cycle", "id", cycle.ID, "err", err)
 			}
 		}
+		cyclesPage, err = cyclesPage.NextPage(ctx)
+		if errors.Is(err, whoop.ErrNoNextPage) {
+			break
+		}
+		if err := p.waitWithLog(ctx, "cycles_next"); err != nil {
+			return err
+		}
 	}
+	p.logger.Info("Cycles sync completed", "total_records", totalCycles, "pages", pageCount)
+
+	// Fetch recoveries with pagination
+	if err := p.waitWithLog(ctx, "recoveries"); err != nil {
+		return err
+	}
+	recoveriesPage, err := client.Recovery.List(ctx, nil)
+	pageCount = 0
+	totalRecoveries := 0
+	for {
+		if err != nil {
+			return err
+		}
+		pageCount++
+		totalRecoveries += len(recoveriesPage.Records)
+		p.logger.Debug("Processing recoveries page", "page", pageCount, "records", len(recoveriesPage.Records))
+
+		for _, recovery := range recoveriesPage.Records {
+			if err := p.storage.UpsertRecovery(ctx, p.logger, internalUserID, &recovery); err != nil {
+				p.logger.Error("Failed to upsert recovery", "cycle_id", recovery.CycleID, "err", err)
+			}
+		}
+		recoveriesPage, err = recoveriesPage.NextPage(ctx)
+		if errors.Is(err, whoop.ErrNoNextPage) {
+			break
+		}
+		if err := p.waitWithLog(ctx, "recoveries_next"); err != nil {
+			return err
+		}
+	}
+	p.logger.Info("Recoveries sync completed", "total_records", totalRecoveries, "pages", pageCount)
+
 	return nil
 }
 
@@ -161,28 +212,47 @@ func (p *Poller) pollWorkouts(ctx context.Context) error {
 		return err
 	}
 
-	if err := p.limiter.Wait(ctx); err != nil {
+	if err := p.waitWithLog(ctx, "workouts"); err != nil {
 		return err
 	}
-
 	workoutsPage, err := client.Workout.List(ctx, nil)
-	if err != nil {
-		return err
-	}
+	pageCount := 0
+	totalWorkouts := 0
+	for {
+		if err != nil {
+			return err
+		}
+		pageCount++
+		totalWorkouts += len(workoutsPage.Records)
+		p.logger.Debug("Processing workouts page", "page", pageCount, "records", len(workoutsPage.Records))
 
-	for _, w := range workoutsPage.Records {
-		if err := p.storage.UpsertWorkout(ctx, p.logger, internalUserID, &w); err != nil {
-			p.logger.Error("Failed to upsert workout", "id", w.ID, "err", err)
+		for _, w := range workoutsPage.Records {
+			if err := p.storage.UpsertWorkout(ctx, p.logger, internalUserID, &w); err != nil {
+				p.logger.Error("Failed to upsert workout", "id", w.ID, "err", err)
+			}
+		}
+		workoutsPage, err = workoutsPage.NextPage(ctx)
+		if errors.Is(err, whoop.ErrNoNextPage) {
+			break
+		}
+		if err := p.waitWithLog(ctx, "workouts_next"); err != nil {
+			return err
 		}
 	}
+	p.logger.Info("Workouts sync completed", "total_records", totalWorkouts, "pages", pageCount)
 	return nil
 }
 
 func (p *Poller) pollSleeps(ctx context.Context) error {
 	hour := time.Now().Hour()
-	if hour < 6 || hour > 12 {
-		p.logger.Debug("Skipping sleep poll, outside 6AM-12PM window")
-		return nil
+	isPeak := hour >= 6 && hour <= 12
+	if !isPeak {
+		offpeakInterval, _ := time.ParseDuration(p.cfg.PollIntervalSleepOffpeak)
+		if time.Since(p.lastOffpeakSleepPoll) < offpeakInterval {
+			p.logger.Debug("Skipping sleep poll, outside peak hours and offpeak interval not reached", "last_run", p.lastOffpeakSleepPoll)
+			return nil
+		}
+		p.lastOffpeakSleepPoll = time.Now()
 	}
 
 	client, err := p.authManager.GetClient(ctx, p.whoopUserID)
@@ -194,19 +264,71 @@ func (p *Poller) pollSleeps(ctx context.Context) error {
 		return err
 	}
 
-	if err := p.limiter.Wait(ctx); err != nil {
+	if err := p.waitWithLog(ctx, "sleeps"); err != nil {
 		return err
 	}
-
 	sleepsPage, err := client.Sleep.List(ctx, nil)
+	pageCount := 0
+	totalSleeps := 0
+	for {
+		if err != nil {
+			return err
+		}
+		pageCount++
+		totalSleeps += len(sleepsPage.Records)
+		p.logger.Debug("Processing sleeps page", "page", pageCount, "records", len(sleepsPage.Records))
+
+		for _, s := range sleepsPage.Records {
+			if err := p.storage.UpsertSleep(ctx, p.logger, internalUserID, &s); err != nil {
+				p.logger.Error("Failed to upsert sleep", "id", s.ID, "err", err)
+			}
+		}
+		sleepsPage, err = sleepsPage.NextPage(ctx)
+		if errors.Is(err, whoop.ErrNoNextPage) {
+			break
+		}
+		if err := p.waitWithLog(ctx, "sleeps_next"); err != nil {
+			return err
+		}
+	}
+	p.logger.Info("Sleeps sync completed", "total_records", totalSleeps, "pages", pageCount)
+	return nil
+}
+
+func (p *Poller) pollUserProfile(ctx context.Context) error {
+	client, err := p.authManager.GetClient(ctx, p.whoopUserID)
+	if err != nil {
+		return err
+	}
+	internalUserID, err := p.authManager.GetInternalUserID(ctx, p.whoopUserID)
 	if err != nil {
 		return err
 	}
 
-	for _, s := range sleepsPage.Records {
-		if err := p.storage.UpsertSleep(ctx, p.logger, internalUserID, &s); err != nil {
-			p.logger.Error("Failed to upsert sleep", "id", s.ID, "err", err)
-		}
+	if err := p.waitWithLog(ctx, "profile"); err != nil {
+		return err
 	}
+	p.logger.Info("Fetching basic profile and body measurements")
+	
+	profile, err := client.User.GetBasicProfile(ctx)
+	if err != nil {
+		return err
+	}
+	if err := p.storage.UpsertUserProfile(ctx, p.logger, internalUserID, profile); err != nil {
+		return err
+	}
+
+	if err := p.waitWithLog(ctx, "measurement"); err != nil {
+		return err
+	}
+	measurement, err := client.User.GetBodyMeasurement(ctx)
+	if err != nil {
+		return err
+	}
+	if err := p.storage.UpsertBodyMeasurement(ctx, p.logger, internalUserID, measurement); err != nil {
+		return err
+	}
+
+	p.logger.Info("User profile and measurements updated")
 	return nil
 }

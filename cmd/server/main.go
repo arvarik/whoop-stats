@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -28,21 +29,38 @@ func main() {
 	userIDFlag := flag.String("user", "12345", "WHOOP User ID to poll (only used in poll mode)")
 	flag.Parse()
 
-	// Initialize structured logger
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	slog.SetDefault(logger)
+	// 1. Initial Logger for Setup
+	setupLogger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 1. Load Configuration
+	// 2. Load Configuration
 	cfg, err := config.LoadConfig(ctx)
 	if err != nil {
-		logger.Error("Failed to load configuration", "error", err)
+		setupLogger.Error("Failed to load configuration", "error", err)
 		os.Exit(1)
 	}
 
-	// 2. Initialize Database Connection Pool
+	// 3. Re-initialize Logger with Configured Level
+	var level slog.Level
+	switch strings.ToLower(cfg.LogLevel) {
+	case "debug":
+		level = slog.LevelDebug
+	case "info":
+		level = slog.LevelInfo
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
+	slog.SetDefault(logger)
+
+	// 4. Initialize Database Connection Pool
 	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
 		logger.Error("Failed to parse database URL", "error", err)
