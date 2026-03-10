@@ -53,7 +53,7 @@ func TestPoller_Pagination(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/v1/cycle" {
-			nextToken := r.URL.Query().Get("next_token")
+			nextToken := r.URL.Query().Get("nextToken")
 			if nextToken == "" {
 				// Page 1
 				json.NewEncoder(w).Encode(map[string]interface{}{
@@ -95,7 +95,11 @@ func TestPoller_Pagination(t *testing.T) {
 	// Since Poller uses authManager.GetClient, we'll have to be creative or refactor Poller slightly.
 	// For this test, let's just test pollCyclesAndRecoveries by manually giving it a client.
 	
-	client := whoop.NewClient(whoop.WithToken("test"), whoop.WithBaseURL(server.URL+"/v1"))
+	client := whoop.NewClient(
+		whoop.WithToken("test"), 
+		whoop.WithBaseURL(server.URL+"/v1"),
+		whoop.WithRateLimiting(false),
+	)
 	
 	mockStore := &mockStorage{}
 	p := &Poller{

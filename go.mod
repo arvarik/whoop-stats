@@ -3,7 +3,7 @@ module github.com/arvind/whoop-stats
 go 1.25.0
 
 require (
-	github.com/arvarik/whoop-go v1.0.1
+	github.com/arvarik/whoop-go v1.1.0
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-chi/cors v1.2.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
