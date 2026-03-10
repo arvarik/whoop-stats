@@ -20,7 +20,7 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     ports:
-      - "8080:8080"
+      - "8082:8080"
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-whoop_user}:${POSTGRES_PASSWORD:-secretpassword}@timescaledb:5432/whoop_stats?sslmode=disable
       SERVER_PORT: "8080"
@@ -40,7 +40,7 @@ services:
       context: ./web
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "3032:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://backend:8080
       WHOOP_STATS_TOKEN: ${WHOOP_STATS_TOKEN}

@@ -85,15 +85,15 @@ docker-compose -f docker-compose.prod.yml up -d --build
 ```
 This single command spins up:
 1.  **TimescaleDB (Postgres 15)**
-2.  **Go API & Worker (Port 8080)**
-3.  **Next.js Frontend (Port 3000)**
+2.  **Go API & Worker (Port 8082)**
+3.  **Next.js Frontend (Port 3032)**
 
-Access your dashboard at `http://localhost:3000`.
+Access your dashboard at `http://localhost:3032`.
 
 #### Customizing Ports
-If you already have services running on ports `8080` or `3000` on your home server, you can easily alter the external bindings in `docker-compose.prod.yml` without changing any code:
-*   To change the **Backend API** port from `8080`, modify the ports block under `backend`: `-"9090:8080"`
-*   To change the **Frontend UI** port from `3000`, modify the ports block under `frontend`: `-"4000:3000"`
+If you already have services running on ports `8082` or `3032` on your home server, you can easily alter the external bindings in `docker-compose.prod.yml` without changing any code:
+*   To change the **Backend API** port from `8082`, modify the ports block under `backend`: `-"9090:8080"`
+*   To change the **Frontend UI** port from `3032`, modify the ports block under `frontend`: `-"4000:3000"`
 
 ### 4. Local Development
 **Database:**
