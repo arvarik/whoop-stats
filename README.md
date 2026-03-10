@@ -6,72 +6,29 @@ A premium, high-performance, open-source dashboard and ingestion engine for your
 ![Go Version](https://img.shields.io/badge/go-1.22+-00ADD8.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16+-black.svg)
 
-## Features
-
-*   **Dual-Mode Ingestion (Webhook & Poller):** Run the backend in Webhook mode (the "Inbox Pattern") for real-time updates, or in Poller mode to aggressively scrape the API on a configurable schedule.
-*   **Complete Data Coverage:** Tracks all available WHOOP API data, including:
-    *   **Cycles:** Physiological cycles with strain and heart rate metrics.
-    *   **Sleeps:** Detailed sleep stage breakdowns, consistency, and efficiency.
-    *   **Recoveries:** Daily recovery scores, RHR, HRV, SPO2, and skin temperature.
-    *   **Workouts:** Full workout details with sport-specific metrics and HR zone durations.
-    *   **User Profiles:** Basic profile information and body measurements (height, weight, max HR).
-*   **Continuous Aggregates:** Postgres/TimescaleDB materialized views natively pre-compute 30-day strain and recovery trends for `O(1)` read performance.
-*   **Linear-Inspired Dashboard:** A hyper-snappy Next.js 16 (App Router) interface using Tailwind CSS v4, Framer Motion, and Glassmorphism.
-*   **Interactive Visualizations:** Deep dive into sleep stages, HR zones, and custom Recharts with macOS-style tooltips. Features a dedicated UI **"Sync" Button** to trigger ad-hoc backend synchronization and immediately refresh the dashboard.
-*   **Fully Typed:** 100% end-to-end type safety from the Postgres schema to the Next.js UI using `sqlc` and `openapi-typescript`.
-*   **SSD Wear Protection:** Engineered for 24/7 homelab usage on consumer SSDs:
-    *   **RAM-Backed Logs:** Ephemeral data (`/tmp`, `/var/log`) is mounted to `tmpfs` (RAM) in Docker.
-    *   **Efficient Logging:** Uses the Docker `local` logging driver with binary compression to minimize Write Amplification (WA).
-    *   **Dynamic Log Levels:** Completely silence polling chatter via the `LOG_LEVEL` environment variable.
-
 ---
 
 ## Architecture: Dual Ingestion Engines
 
-This project supports two primary modes of operation (`-mode webhook` or `-mode poll`).
+This project is engineered to work in any environment by supporting two distinct data ingestion modes.
 
-### 1. The Webhook Inbox Pattern (Recommended)
-We prioritize data integrity. WHOOP webhooks require immediate HTTP `200 OK` responses, otherwise, they drop the payload. If the WHOOP API is rate-limiting us while we try to fetch the full object, traditional synchronous processing fails.
+### 1. The Polling Engine (Standard for Homelabs/NAS)
+**The "Why":** Most home users run servers behind NAT/Firewalls without a public domain or fixed IP. Polling is the **most secure and simplest** option for homelabs because it requires **zero open inbound ports** on your router. 
+**The "How":** In `poll` mode, the backend makes outbound requests to WHOOP. Since your server initiates the connection, you don't need to configure port forwarding, Dynamic DNS, or reverse proxies (like ngrok or Cloudflare Tunnels). It uses cursor-based pagination to sync your entire history automatically.
 
-This project uses an **Inbox Pattern**:
-1. The Webhook Handler validates the HMAC signature and dumps the raw JSON into the `webhook_events` table (`status: pending`).
-2. It returns a `200 OK` within milliseconds.
-3. A background Go worker plucks pending events, fetches the full data via the `whoop-go` SDK using exponential backoff, and safely UPSERTs the TimescaleDB hypertables.
+### 2. The Webhook Inbox Pattern (Standard for Cloud)
+**The "Why":** For users with public-facing cloud instances (DigitalOcean, AWS, etc.), webhooks provide near-instant synchronization when a WHOOP activity is completed.
+**The "How":** We use an "Inbox Pattern" to ensure 100% data integrity. The server instantly acknowledges the webhook and saves it to a queue. A background worker then fetches the full data, protecting you from losing updates if the API is slow or throttled.
 
-### 2. The Polling Engine (Ideal for Homelabs)
-If you are hosting this on a local network (like a homelab or NAS) and do not want to expose your server to the public internet to receive webhooks, you should run the application in `poll` mode. 
+---
 
-In this mode, the backend spins up concurrent background workers that aggressively and safely scrape the WHOOP API on configurable intervals. Since it only makes outbound requests, it easily bypasses NATs and firewalls without requiring reverse proxies (like ngrok or Cloudflare Tunnels).
+## Features
 
-```bash
-# Environment Configuration for Poller
-export POLL_INTERVAL_CYCLE="4h"
-export POLL_INTERVAL_WORKOUT="30m"
-export POLL_INTERVAL_SLEEP="1h"
-export POLL_INTERVAL_SLEEP_OFFPEAK="4h"
-export POLL_INTERVAL_PROFILE="24h"
-export LOG_LEVEL="info" # debug, info, warn, error
-```
-
-```mermaid
-sequenceDiagram
-    participant W as WHOOP API
-    participant H as Go HTTP Handler
-    participant DB as TimescaleDB (webhook_events)
-    participant Worker as Go Background Worker
-    participant TS as TimescaleDB (Hypertables)
-
-    W->>H: POST /webhook (Skinny Payload)
-    H->>DB: INSERT payload (status: pending)
-    H-->>W: 200 OK (Acknowledge)
-    
-    loop Every 5 Seconds
-        Worker->>DB: SELECT * FROM webhook_events WHERE status='pending'
-        Worker->>W: Fetch Full Object (e.g. GET /cycle/:id)
-        Worker->>TS: UPSERT into cycles, sleeps, workouts
-        Worker->>DB: UPDATE status='processed'
-    end
-```
+*   **Complete Data Coverage:** Tracks all available metrics including Cycles, Sleep Stages, Recoveries (SPO2, HRV, Skin Temp), Workouts (HR Zones), and User Profiles.
+*   **SSD Wear Protection:** Optimized for 24/7 homelab usage with RAM-backed logs (`tmpfs`), compressed binary logging, and dynamic log levels to minimize write amplification.
+*   **Continuous Aggregates:** Pre-computed TimescaleDB views for `O(1)` dashboard performance.
+*   **Linear-Inspired UI:** Tactile Next.js 16 interface with Glassmorphism, Tailwind CSS v4, and interactive Recharts visualizations.
+*   **Fully Typed:** 100% end-to-end type safety using `sqlc` and `openapi-typescript`.
 
 ---
 
@@ -79,55 +36,48 @@ sequenceDiagram
 
 ### 1. Prerequisites
 * Docker and Docker Compose
-* Node.js v18+ (for local frontend development)
-* Go 1.22+ (for local backend development)
-* A WHOOP Developer account
+* Go 1.22+ (one-time use to run the authentication script)
+* A [WHOOP Developer account](https://developer.whoop.com/)
 
 ### 2. Environment Setup
-Copy the example environment file:
+Copy the example environment file and fill in your WHOOP API credentials and a random 32-character encryption key.
 ```bash
 cp .env.example .env
 ```
-Fill in your `WHOOP_CLIENT_ID`, `WHOOP_CLIENT_SECRET`, and a random 32-character string for your `ENCRYPTION_KEY`.
 
-### 3. Production Deployment
-This repository is configured with multi-stage Dockerfiles optimized for production.
+### 3. First-Time Authentication
+Since this app can run in environments without a public URL, we use a one-time script to generate your initial tokens:
 
+1.  **Configure Redirect URI:** In your WHOOP Developer Dashboard, add `http://localhost:8081/callback` to your App's Redirect URIs.
+2.  **Generate Token:** Run the following commands on your local machine (your PC, not necessarily the NAS):
+    ```bash
+    export WHOOP_CLIENT_ID=your_id
+    export WHOOP_CLIENT_SECRET=your_secret
+    go run cmd/auth/main.go
+    ```
+3.  **Authorize:** Follow the URL printed in your terminal, log in to WHOOP, and authorize the app.
+4.  **Save JSON:** This will generate a file named `.whoop_token.json` in your current directory.
+5.  **Deploy:** If you are deploying to a NAS or remote server, upload this `.whoop_token.json` to the root directory of the project on that server.
+
+### 4. Deployment
+
+#### Option A: Homelab / NAS (Polling Mode)
+```bash
+docker-compose up -d --build
+```
+
+#### Option B: Cloud Instance (Webhook Mode)
+1. Ensure your server is accessible via HTTPS.
+2. Configure your WHOOP Webhook URL to point to `https://your-domain.com/webhook`.
+3. Start in webhook mode:
 ```bash
 docker-compose -f docker-compose.prod.yml up -d --build
 ```
-This single command spins up:
-1.  **TimescaleDB (Postgres 15)**
-2.  **Go API & Worker (Port 8082)**
-3.  **Next.js Frontend (Port 3032)**
 
-Access your dashboard at `http://localhost:3032`.
-
-#### Customizing Ports
-If you already have services running on ports `8082` or `3032` on your home server, you can easily alter the external bindings in `docker-compose.prod.yml` without changing any code:
-*   To change the **Backend API** port from `8082`, modify the ports block under `backend`: `-"9090:8080"`
-*   To change the **Frontend UI** port from `3032`, modify the ports block under `frontend`: `-"4000:3000"`
-
-### 4. Local Development
-**Database:**
-```bash
-docker-compose up -d timescaledb
-```
-
-**Backend:**
-```bash
-go run cmd/server/main.go -mode webhook
-```
-
-**Frontend:**
-```bash
-cd web
-npm install --legacy-peer-deps
-npm run dev
-```
+---
 
 ## Security
 
-* **AES-256-GCM:** Your WHOOP OAuth Access and Refresh tokens are encrypted natively in the Postgres database.
-* **Advisory Locks:** Ad-hoc manual sync triggers use thread-safe mutexes to prevent concurrent DB race conditions.
-* **Non-Root Containers:** All Dockerfile instructions strictly drop privileges to `appuser`/`nextjs` before executing.
+* **AES-256-GCM:** OAuth tokens are encrypted in memory and stored as ciphertext in the database.
+* **Non-Root Containers:** All processes drop privileges to low-privileged users for enhanced security.
+* **Thread-Safe Sync:** Advisory locks prevent race conditions during manual UI-triggered synchronizations.

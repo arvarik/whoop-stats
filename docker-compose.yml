@@ -37,6 +37,8 @@ services:
       - POLL_INTERVAL_SLEEP=1h
       - POLL_INTERVAL_SLEEP_OFFPEAK=4h
       - POLL_INTERVAL_PROFILE=24h
+    volumes:
+      - ./.whoop_token.json:/app/.whoop_token.json:ro
     ports:
       - "8082:8080"
     # Minimize SSD wear by keeping ephemeral data in RAM
