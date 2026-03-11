@@ -261,7 +261,7 @@ func TestStorage_UpsertRecovery(t *testing.T) {
 
 	recovery := whoop.Recovery{
 		CycleID:    1,
-		SleepID:    "100",
+		SleepID:    "df338bff-489f-4ad1-9f19-0d9367befc88",
 		CreatedAt:  time.Now(),
 		ScoreState: "SCORED",
 		Score: &whoop.RecoveryScore{

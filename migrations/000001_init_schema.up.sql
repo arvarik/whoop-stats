@@ -93,7 +93,7 @@ CREATE TABLE recoveries (
     hrv_rmssd_milli REAL,
     spo2_percentage REAL,
     skin_temp_celsius REAL,
-    sleep_id BIGINT,
+    sleep_id TEXT,
     score_state TEXT,
     user_calibrating BOOLEAN,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

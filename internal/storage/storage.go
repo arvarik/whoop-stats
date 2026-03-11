@@ -165,11 +165,6 @@ func (s *Storage) UpsertRecovery(ctx context.Context, userID pgtype.UUID, recove
 		userCalibrating = pgtype.Bool{Bool: recovery.Score.UserCalibrating, Valid: true}
 	}
 
-	sleepID, err := strconv.ParseInt(recovery.SleepID, 10, 64)
-	if err != nil && recovery.SleepID != "" {
-		return fmt.Errorf("parsing recovery sleep ID %q: %w", recovery.SleepID, err)
-	}
-
 	startTime := pgtype.Timestamptz{Time: recovery.CreatedAt, Valid: true}
 
 	if err := s.db.UpsertRecovery(ctx, db.UpsertRecoveryParams{
@@ -182,7 +177,7 @@ func (s *Storage) UpsertRecovery(ctx context.Context, userID pgtype.UUID, recove
 		HrvRmssdMilli:    hrv,
 		Spo2Percentage:   spo2,
 		SkinTempCelsius:  skinTemp,
-		SleepID:          pgtype.Int8{Int64: sleepID, Valid: recovery.SleepID != ""},
+		SleepID:          pgtype.Text{String: recovery.SleepID, Valid: recovery.SleepID != ""},
 		ScoreState:       pgtype.Text{String: recovery.ScoreState, Valid: true},
 		UserCalibrating:  userCalibrating,
 	}); err != nil {

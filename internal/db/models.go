@@ -64,7 +64,7 @@ type Recovery struct {
 	HrvRmssdMilli    pgtype.Float4      `json:"hrv_rmssd_milli"`
 	Spo2Percentage   pgtype.Float4      `json:"spo2_percentage"`
 	SkinTempCelsius  pgtype.Float4      `json:"skin_temp_celsius"`
-	SleepID          pgtype.Int8        `json:"sleep_id"`
+	SleepID          pgtype.Text        `json:"sleep_id"`
 	ScoreState       pgtype.Text        `json:"score_state"`
 	UserCalibrating  pgtype.Bool        `json:"user_calibrating"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
