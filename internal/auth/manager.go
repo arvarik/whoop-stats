@@ -122,7 +122,7 @@ func (m *Manager) GetClient(ctx context.Context, whoopUserID string) (*whoop.Cli
 		return nil, fmt.Errorf("encrypting refresh token: %w", err)
 	}
 
-	// Persist encrypted tokens
+	// Persist encrypted tokens to database
 	if _, err = m.db.UpsertUser(ctx, db.UpsertUserParams{
 		WhoopUserID:           whoopUserID,
 		EncryptedAccessToken:  encAccess,
@@ -130,6 +130,11 @@ func (m *Manager) GetClient(ctx context.Context, whoopUserID string) (*whoop.Cli
 	}); err != nil {
 		return nil, fmt.Errorf("persisting refreshed tokens: %w", err)
 	}
+
+	// Keep .whoop_token.json in sync so DB wipes don't invalidate the fallback.
+	// WHOOP refresh tokens are single-use: once consumed, the old token is dead.
+	// Without this, wiping the DB loses the new tokens and the stale JSON can't refresh.
+	m.persistToJSON(newTok)
 
 	// Build and cache the client with a 55-minute TTL (tokens expire in 1 hour)
 	client := whoop.NewClient(whoop.WithToken(newTok.AccessToken))
@@ -182,6 +187,24 @@ func (m *Manager) loadFromOfflineJSON(ctx context.Context, whoopUserID string) (
 		EncryptedAccessToken:  encAccess,
 		EncryptedRefreshToken: encRefresh,
 	})
+}
+
+// persistToJSON writes refreshed tokens back to .whoop_token.json.
+// This is best-effort — the database is the primary store. Keeping the JSON
+// file in sync ensures that DB wipes (e.g., schema migrations) don't leave a
+// stale, already-consumed refresh token as the only fallback.
+func (m *Manager) persistToJSON(tok *tokenData) {
+	data, err := json.MarshalIndent(tok, "", "  ")
+	if err != nil {
+		m.logger.Warn("Failed to marshal tokens for JSON persistence", "error", err)
+		return
+	}
+	if err := os.WriteFile(".whoop_token.json", data, 0600); err != nil {
+		// Expected to fail if mounted read-only (:ro) — that's fine, DB has the tokens
+		m.logger.Debug("Could not update .whoop_token.json (may be read-only mount)", "error", err)
+	} else {
+		m.logger.Info("Updated .whoop_token.json with refreshed tokens")
+	}
 }
 
 // refreshToken exchanges a refresh token for new access and refresh tokens.

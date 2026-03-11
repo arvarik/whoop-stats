@@ -47,7 +47,7 @@ services:
       - WHOOP_STATS_POLL_INTERVAL_SLEEP_OFFPEAK=${POLL_INTERVAL_SLEEP_OFFPEAK:-4h}
       - WHOOP_STATS_POLL_INTERVAL_PROFILE=${POLL_INTERVAL_PROFILE:-24h}
     volumes:
-      - ./.whoop_token.json:/app/.whoop_token.json:ro
+      - ./.whoop_token.json:/app/.whoop_token.json
     ports:
       - "${BACKEND_PORT:-8085}:8080"
     # Minimize SSD wear on homelab consumer drives
