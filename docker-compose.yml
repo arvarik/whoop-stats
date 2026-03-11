@@ -49,7 +49,7 @@ services:
     volumes:
       - ./.whoop_token.json:/app/.whoop_token.json:ro
     ports:
-      - "${BACKEND_PORT:-8082}:8080"
+      - "${BACKEND_PORT:-8085}:8080"
     # Minimize SSD wear on homelab consumer drives
     tmpfs:
       - /tmp

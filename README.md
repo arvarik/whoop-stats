@@ -103,7 +103,7 @@ Database migrations run automatically on first startup.
 docker compose up -d --build
 ```
 
-The dashboard will be available at `http://your-server:3032` and the API at `http://your-server:8082`.
+The dashboard will be available at `http://your-server:3032` and the API at `http://your-server:8085`.
 
 #### Option B: Cloud (Webhook Mode)
 
@@ -150,7 +150,7 @@ POLL_INTERVAL_PROFILE=24h       # User profile data (rarely changes)
 
 ### Changing Ports
 
-Default ports are `8082` (backend) and `3032` (frontend). Change them in `.env`:
+Default ports are `8085` (backend) and `3032` (frontend). Change them in `.env`:
 
 ```env
 BACKEND_PORT=9090
