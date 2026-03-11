@@ -7,6 +7,9 @@ A premium, high-performance, open-source dashboard and ingestion engine for your
 ![Next.js](https://img.shields.io/badge/Next.js-16+-black.svg)
 ![TimescaleDB](https://img.shields.io/badge/TimescaleDB-15+-FDB515.svg)
 
+<img width="2433" height="1878" alt="image" src="https://github.com/user-attachments/assets/11e453dc-4059-495f-a84c-0690675f4609" />
+
+
 ---
 
 ## Architecture
