@@ -73,7 +73,7 @@ type Recovery struct {
 
 // Sleep sessions with stage breakdowns, sleep need, and debt tracking
 type Sleep struct {
-	ID                          int64              `json:"id"`
+	ID                          string             `json:"id"`
 	UserID                      pgtype.UUID        `json:"user_id"`
 	StartTime                   pgtype.Timestamptz `json:"start_time"`
 	EndTime                     pgtype.Timestamptz `json:"end_time"`
@@ -147,7 +147,7 @@ type WeeklyStrain struct {
 
 // Workout sessions with HR zones, GPS data, and sport classification
 type Workout struct {
-	ID                  int64              `json:"id"`
+	ID                  string             `json:"id"`
 	UserID              pgtype.UUID        `json:"user_id"`
 	StartTime           pgtype.Timestamptz `json:"start_time"`
 	EndTime             pgtype.Timestamptz `json:"end_time"`

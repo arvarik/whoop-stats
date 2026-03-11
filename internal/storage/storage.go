@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"time"
 
 	"github.com/arvarik/whoop-go/whoop"
@@ -113,13 +112,8 @@ func (s *Storage) UpsertSleep(ctx context.Context, userID pgtype.UUID, sleep *wh
 		}
 	}
 
-	id, err := strconv.ParseInt(sleep.ID, 10, 64)
-	if err != nil {
-		return fmt.Errorf("parsing sleep ID %q: %w", sleep.ID, err)
-	}
-
 	if err := s.db.UpsertSleep(ctx, db.UpsertSleepParams{
-		ID:                          id,
+		ID:                          sleep.ID,
 		UserID:                      userID,
 		StartTime:                   pgtype.Timestamptz{Time: sleep.Start, Valid: true},
 		EndTime:                     endTime,
@@ -144,9 +138,9 @@ func (s *Storage) UpsertSleep(ctx context.Context, userID pgtype.UUID, sleep *wh
 		NeedFromRecentStrainMilli:   needStrain,
 		NeedFromRecentNapMilli:      needNap,
 	}); err != nil {
-		return fmt.Errorf("upserting sleep %d: %w", id, err)
+		return fmt.Errorf("upserting sleep %s: %w", sleep.ID, err)
 	}
-	s.logger.Debug("Upserted sleep", "id", id)
+	s.logger.Debug("Upserted sleep", "id", sleep.ID)
 	return nil
 }
 
@@ -227,13 +221,8 @@ func (s *Storage) UpsertWorkout(ctx context.Context, userID pgtype.UUID, workout
 		}
 	}
 
-	id, err := strconv.ParseInt(workout.ID, 10, 64)
-	if err != nil {
-		return fmt.Errorf("parsing workout ID %q: %w", workout.ID, err)
-	}
-
 	if err := s.db.UpsertWorkout(ctx, db.UpsertWorkoutParams{
-		ID:                  id,
+		ID:                  workout.ID,
 		UserID:              userID,
 		StartTime:           pgtype.Timestamptz{Time: workout.Start, Valid: true},
 		EndTime:             endTime,
@@ -256,9 +245,9 @@ func (s *Storage) UpsertWorkout(ctx context.Context, userID pgtype.UUID, workout
 		SportName:           pgtype.Text{String: workout.SportName, Valid: true},
 		ScoreState:          pgtype.Text{String: workout.ScoreState, Valid: true},
 	}); err != nil {
-		return fmt.Errorf("upserting workout %d: %w", id, err)
+		return fmt.Errorf("upserting workout %s: %w", workout.ID, err)
 	}
-	s.logger.Debug("Upserted workout", "id", id)
+	s.logger.Debug("Upserted workout", "id", workout.ID)
 	return nil
 }
 

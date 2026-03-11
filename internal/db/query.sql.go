@@ -606,7 +606,7 @@ ON CONFLICT (id, start_time) DO UPDATE SET
 `
 
 type UpsertSleepParams struct {
-	ID                          int64              `json:"id"`
+	ID                          string             `json:"id"`
 	UserID                      pgtype.UUID        `json:"user_id"`
 	StartTime                   pgtype.Timestamptz `json:"start_time"`
 	EndTime                     pgtype.Timestamptz `json:"end_time"`
@@ -772,7 +772,7 @@ ON CONFLICT (id, start_time) DO UPDATE SET
 `
 
 type UpsertWorkoutParams struct {
-	ID                  int64              `json:"id"`
+	ID                  string             `json:"id"`
 	UserID              pgtype.UUID        `json:"user_id"`
 	StartTime           pgtype.Timestamptz `json:"start_time"`
 	EndTime             pgtype.Timestamptz `json:"end_time"`

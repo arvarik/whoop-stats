@@ -104,7 +104,7 @@ SELECT create_hypertable('recoveries', 'start_time');
 COMMENT ON TABLE recoveries IS 'Daily recovery scores with HRV, RHR, SpO2, and skin temperature';
 
 CREATE TABLE sleeps (
-    id BIGINT NOT NULL,
+    id TEXT NOT NULL,
     user_id UUID NOT NULL REFERENCES users(id),
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ,
@@ -136,7 +136,7 @@ SELECT create_hypertable('sleeps', 'start_time');
 COMMENT ON TABLE sleeps IS 'Sleep sessions with stage breakdowns, sleep need, and debt tracking';
 
 CREATE TABLE workouts (
-    id BIGINT NOT NULL,
+    id TEXT NOT NULL,
     user_id UUID NOT NULL REFERENCES users(id),
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ,
