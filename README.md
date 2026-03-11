@@ -202,7 +202,7 @@ go test ./...
 ## Troubleshooting
 
 ### Backend won't start: "ENCRYPTION_KEY is required"
-You must set `WHOOP_STATS_ENCRYPTION_KEY` (exactly 32 characters) in `.env`. Generate one:
+Set `ENCRYPTION_KEY` (exactly 32 hex characters) in `.env`. Generate one:
 ```bash
 openssl rand -hex 16
 ```
@@ -211,27 +211,51 @@ openssl rand -hex 16
 Register at [developer.whoop.com](https://developer.whoop.com) and set `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` in `.env`.
 
 ### Frontend shows "Something went wrong"
-This means the frontend can't reach the backend API. Check:
+The frontend can't reach the backend API:
 1. Is the backend container running? `docker compose ps`
 2. Is `NEXT_PUBLIC_API_URL` pointing to the correct backend address/port?
 3. Check backend logs: `docker compose logs backend`
 
 ### OAuth flow fails: "invalid_client"
-Your `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` may be incorrect. Double-check them in your [WHOOP Developer Dashboard](https://developer.whoop.com). Make sure `http://localhost:8081/callback` is listed as a redirect URI.
+Double-check `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` in your [WHOOP Developer Dashboard](https://developer.whoop.com). Ensure `http://localhost:8081/callback` is added as a Redirect URI in your WHOOP app settings.
+
+### Token refresh fails: "invalid_request" / HTTP 400
+WHOOP refresh tokens are **single-use** — each refresh returns a new token and invalidates the old one. This error usually means the refresh token in `.whoop_token.json` has already been consumed.
+
+**Fix:** Regenerate the token locally and copy to your server:
+```bash
+# On your local machine (needs Go + browser)
+go run cmd/auth/main.go
+
+# Copy to NAS/server
+scp .whoop_token.json user@your-server:/path/to/whoop-stats/
+```
+
+Then on the server:
+```bash
+docker compose exec timescaledb psql -U whoop_user -d whoop_stats -c "DELETE FROM users;"
+docker compose restart backend
+```
+
+> **Note:** As of v0.0.1, the backend automatically writes refreshed tokens back to `.whoop_token.json` after each successful refresh. This means DB wipes no longer invalidate your token — you only need to re-run the OAuth flow if the token has been consumed without being persisted.
 
 ### Data not appearing on dashboard
-1. **First deploy?** It takes a few minutes for the initial poll to complete. Check backend logs: `docker compose logs -f backend`
-2. **Check polling logs** for API errors: `docker compose logs backend | grep ERROR`
+1. **First deploy?** The initial sync takes 1–2 minutes. Watch: `docker compose logs -f backend`
+2. **Check for errors:** `docker compose logs backend | grep ERROR`
 3. **Try manual sync:** Click the "Sync" button on the Overview page.
-4. **Token expired?** Re-run `go run cmd/auth/main.go` to generate a fresh `.whoop_token.json`.
+4. **Token issue?** Look for `refreshing token` errors in logs — see "Token refresh fails" above.
 
 ### Database connection errors
-1. Ensure the TimescaleDB container is healthy: `docker compose ps`
-2. Check if `POSTGRES_PASSWORD` in `.env` matches what the database was initialized with. If you change the password after first run, you'll need to delete the volume: `docker compose down -v && docker compose up -d`
-3. Verify the database URL in the backend logs.
+1. Ensure TimescaleDB is healthy: `docker compose ps`
+2. If you changed `POSTGRES_PASSWORD` after first run, wipe the volume:
+   ```bash
+   docker compose down
+   sudo rm -rf ./data/timescaledb
+   docker compose up -d
+   ```
 
-### Port conflicts
-If you see `bind: address already in use`, another service is using the same port. Change `BACKEND_PORT` or `FRONTEND_PORT` in `.env`:
+### Port conflicts: "address already in use"
+Another service is using the same port. Change `BACKEND_PORT` or `FRONTEND_PORT` in `.env`:
 ```env
 BACKEND_PORT=9090
 FRONTEND_PORT=4000
@@ -240,13 +264,27 @@ FRONTEND_PORT=4000
 ### Dashboard shows stale/old data
 Continuous aggregates refresh hourly with a 3-day lookback. For immediate results:
 1. Click "Sync" on the Overview page
-2. Check that your backend is running in poll mode and the intervals are reasonable
+2. Verify poll intervals in `.env` are reasonable
 
-### Docker build is slow
-Add a `.dockerignore` file (included) to exclude `node_modules` and `.next` from the build context. For the backend, `.dockerignore` at the project root excludes `web/` and `.git/`.
+### Docker build uses cached layers
+If code changes don't seem to take effect, Docker may be using cached layers:
+```bash
+docker compose build --no-cache backend
+docker compose up -d backend
+```
 
 ### Running on ARM (Raspberry Pi / Apple Silicon)
-Both the Go backend and Next.js frontend build on ARM64 via Docker's multi-platform support. The TimescaleDB image (`timescale/timescaledb:latest-pg15`) supports ARM64 natively.
+Both images build on ARM64 natively. The TimescaleDB image (`timescale/timescaledb:latest-pg15`) supports ARM64.
+
+### Using Watchtower for auto-updates
+Watchtower works seamlessly — it only replaces container images, not volumes. Your `.whoop_token.json` (bind mount) and database (`./data/timescaledb`) persist across updates. Add to your `docker-compose.yml`:
+```yaml
+  watchtower:
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 86400 whoop-stats-backend whoop-stats-frontend
+```
 
 ---
 
