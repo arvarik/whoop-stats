@@ -69,6 +69,7 @@ func NewServer(cfg *config.Config, handler *Handler, logger *slog.Logger) *chi.M
 		r.Get("/cycles", handler.GetCycles)
 		r.Get("/sleeps", handler.GetSleeps)
 		r.Get("/workouts", handler.GetWorkouts)
+		r.Get("/recoveries", handler.GetRecoveries)
 		r.Get("/insights", handler.GetInsights)
 
 		r.Post("/sync", handler.PostSync)

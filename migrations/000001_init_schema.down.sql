@@ -1,3 +1,6 @@
+-- Down migration: drops all application objects in reverse dependency order.
+
+DROP MATERIALIZED VIEW IF EXISTS daily_sleep;
 DROP MATERIALIZED VIEW IF EXISTS weekly_recovery;
 DROP MATERIALIZED VIEW IF EXISTS daily_recovery;
 DROP MATERIALIZED VIEW IF EXISTS weekly_strain;

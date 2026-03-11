@@ -7,7 +7,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// ParseTimezoneOffset converts string offsets like "-0500", "+02:00", or "Z" into a pgtype.Interval
+// ParseTimezoneOffset converts WHOOP API timezone offset strings (e.g. "-0500",
+// "+02:00", "Z", "") into a pgtype.Interval. Returns an invalid interval for
+// malformed inputs rather than an error, since timezone data is non-critical.
 func ParseTimezoneOffset(offsetStr string) pgtype.Interval {
 	if offsetStr == "" || offsetStr == "Z" {
 		return pgtype.Interval{Microseconds: 0, Valid: true}

@@ -13,7 +13,6 @@ import (
 
 	"github.com/arvarik/whoop-go/whoop"
 	"github.com/arvind/whoop-stats/internal/config"
-	"github.com/arvind/whoop-stats/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +24,7 @@ type mockStorage struct {
 	upsertedTypes []string
 }
 
-func (m *mockStorage) UpsertCycle(ctx context.Context, logger *slog.Logger, userID [16]byte, cycle *whoop.Cycle) error {
+func (m *mockStorage) UpsertCycle(ctx context.Context, userID [16]byte, cycle *whoop.Cycle) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.upsertCount++
@@ -34,7 +33,7 @@ func (m *mockStorage) UpsertCycle(ctx context.Context, logger *slog.Logger, user
 	return nil
 }
 
-func (m *mockStorage) UpsertRecovery(ctx context.Context, logger *slog.Logger, userID [16]byte, recovery *whoop.Recovery) error {
+func (m *mockStorage) UpsertRecovery(ctx context.Context, userID [16]byte, recovery *whoop.Recovery) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.upsertCount++
@@ -43,10 +42,10 @@ func (m *mockStorage) UpsertRecovery(ctx context.Context, logger *slog.Logger, u
 	return nil
 }
 
-func (m *mockStorage) UpsertWorkout(ctx context.Context, logger *slog.Logger, userID [16]byte, workout *whoop.Workout) error { return nil }
-func (m *mockStorage) UpsertSleep(ctx context.Context, logger *slog.Logger, userID [16]byte, sleep *whoop.Sleep) error { return nil }
-func (m *mockStorage) UpsertUserProfile(ctx context.Context, logger *slog.Logger, userID [16]byte, profile *whoop.BasicProfile) error { return nil }
-func (m *mockStorage) UpsertBodyMeasurement(ctx context.Context, logger *slog.Logger, userID [16]byte, measurement *whoop.BodyMeasurement) error { return nil }
+func (m *mockStorage) UpsertWorkout(ctx context.Context, userID [16]byte, workout *whoop.Workout) error { return nil }
+func (m *mockStorage) UpsertSleep(ctx context.Context, userID [16]byte, sleep *whoop.Sleep) error { return nil }
+func (m *mockStorage) UpsertUserProfile(ctx context.Context, userID [16]byte, profile *whoop.BasicProfile) error { return nil }
+func (m *mockStorage) UpsertBodyMeasurement(ctx context.Context, userID [16]byte, measurement *whoop.BodyMeasurement) error { return nil }
 
 func TestPoller_Pagination(t *testing.T) {
 	// 1. Setup mock WHOOP API server
@@ -83,8 +82,8 @@ func TestPoller_Pagination(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// 2. Setup Poller with manual dependency injection (minimal)
-	cfg := &config.Config{
+	// 2. Setup with test client pointing to mock WHOOP API server
+	_ = &config.Config{
 		PollIntervalCycle: "1h",
 		PollIntervalWorkout: "1h",
 		PollIntervalSleep: "1h",
@@ -102,13 +101,6 @@ func TestPoller_Pagination(t *testing.T) {
 	)
 	
 	mockStore := &mockStorage{}
-	p := &Poller{
-		cfg: cfg,
-		storage: &storage.Storage{}, // Not used because we override the method or use mock
-		logger: slog.New(slog.NewTextHandler(os.Stdout, nil)),
-		whoopUserID: "123",
-		limiter: nil, // We'll bypass limiter wait for test
-	}
 	
 	// Helper to bypass limiter
 	ctx := context.Background()
@@ -123,7 +115,7 @@ func TestPoller_Pagination(t *testing.T) {
 	require.NoError(t, err)
 	for {
 		for _, cycle := range cyclesPage.Records {
-			mockStore.UpsertCycle(ctx, p.logger, internalUserID, &cycle)
+			mockStore.UpsertCycle(ctx, internalUserID, &cycle)
 		}
 		cyclesPage, err = cyclesPage.NextPage(ctx)
 		if err != nil {
@@ -135,7 +127,7 @@ func TestPoller_Pagination(t *testing.T) {
 	assert.ElementsMatch(t, []int{1, 2}, mockStore.upsertedIDs)
 }
 
-func TestPoller_OffpeakSleepLogic(t *testing.T) {
+func TestPoller_OffpeakSleepInterval(t *testing.T) {
 	p := &Poller{
 		cfg: &config.Config{
 			PollIntervalSleepOffpeak: "4h",
@@ -143,14 +135,28 @@ func TestPoller_OffpeakSleepLogic(t *testing.T) {
 		logger: slog.New(slog.NewTextHandler(os.Stdout, nil)),
 	}
 
-	// Mock "current time" is hard because it's in the method. 
-	// But we can check the logic in pollSleeps.
-	
-	// If it's 2 PM (offpeak)
-	// lastOffpeakSleepPoll is zero (long ago)
-	// Should run.
-	
+	// Parse the offpeak interval to verify it's valid
+	interval, err := time.ParseDuration(p.cfg.PollIntervalSleepOffpeak)
+	if err != nil {
+		t.Fatalf("failed to parse offpeak interval: %v", err)
+	}
+
+	if interval != 4*time.Hour {
+		t.Errorf("expected 4h, got %v", interval)
+	}
+
+	// Verify the staleness check: if last poll was 5h ago and interval is 4h, should be stale
 	p.lastOffpeakSleepPoll = time.Now().Add(-5 * time.Hour)
-	// We can't easily test the hour check without mocking time.Now() or refactoring.
-	// But we can verify the interval check logic if we were to expose it.
+	isStale := time.Since(p.lastOffpeakSleepPoll) >= interval
+	if !isStale {
+		t.Error("expected poll from 5h ago to be stale with 4h interval")
+	}
+
+	// Verify fresh poll is not stale
+	p.lastOffpeakSleepPoll = time.Now().Add(-1 * time.Hour)
+	isStale = time.Since(p.lastOffpeakSleepPoll) >= interval
+	if isStale {
+		t.Error("expected poll from 1h ago to NOT be stale with 4h interval")
+	}
 }
+

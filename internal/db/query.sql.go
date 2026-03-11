@@ -12,9 +12,10 @@ import (
 )
 
 const createWebhookEvent = `-- name: CreateWebhookEvent :one
+
 INSERT INTO webhook_events (payload, status, created_at)
 VALUES ($1, $2, NOW())
-RETURNING id, payload, status, created_at
+RETURNING id, payload, status, retry_count, created_at, processed_at
 `
 
 type CreateWebhookEventParams struct {
@@ -22,6 +23,9 @@ type CreateWebhookEventParams struct {
 	Status  string `json:"status"`
 }
 
+// ---------------------------------------------------------------------------
+// Webhook Events
+// ---------------------------------------------------------------------------
 func (q *Queries) CreateWebhookEvent(ctx context.Context, arg CreateWebhookEventParams) (WebhookEvent, error) {
 	row := q.db.QueryRow(ctx, createWebhookEvent, arg.Payload, arg.Status)
 	var i WebhookEvent
@@ -29,13 +33,15 @@ func (q *Queries) CreateWebhookEvent(ctx context.Context, arg CreateWebhookEvent
 		&i.ID,
 		&i.Payload,
 		&i.Status,
+		&i.RetryCount,
 		&i.CreatedAt,
+		&i.ProcessedAt,
 	)
 	return i, err
 }
 
 const getCycles = `-- name: GetCycles :many
-SELECT id, user_id, start_time, end_time, timezone_offset, strain, created_at, updated_at, kilojoule, average_heart_rate, max_heart_rate, score_state FROM cycles
+SELECT id, user_id, start_time, end_time, timezone_offset, strain, kilojoule, average_heart_rate, max_heart_rate, score_state, created_at, updated_at FROM cycles
 WHERE user_id = $1 AND start_time < $2
 ORDER BY start_time DESC
 LIMIT $3
@@ -53,7 +59,7 @@ func (q *Queries) GetCycles(ctx context.Context, arg GetCyclesParams) ([]Cycle, 
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Cycle
+	items := []Cycle{}
 	for rows.Next() {
 		var i Cycle
 		if err := rows.Scan(
@@ -63,12 +69,12 @@ func (q *Queries) GetCycles(ctx context.Context, arg GetCyclesParams) ([]Cycle, 
 			&i.EndTime,
 			&i.TimezoneOffset,
 			&i.Strain,
-			&i.CreatedAt,
-			&i.UpdatedAt,
 			&i.Kilojoule,
 			&i.AverageHeartRate,
 			&i.MaxHeartRate,
 			&i.ScoreState,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -97,7 +103,7 @@ func (q *Queries) GetDailyRecovery(ctx context.Context, arg GetDailyRecoveryPara
 		return nil, err
 	}
 	defer rows.Close()
-	var items []DailyRecovery
+	items := []DailyRecovery{}
 	for rows.Next() {
 		var i DailyRecovery
 		if err := rows.Scan(&i.UserID, &i.Bucket, &i.AvgRecovery); err != nil {
@@ -111,7 +117,44 @@ func (q *Queries) GetDailyRecovery(ctx context.Context, arg GetDailyRecoveryPara
 	return items, nil
 }
 
+const getDailySleep = `-- name: GetDailySleep :many
+SELECT user_id, bucket, avg_performance, avg_efficiency FROM daily_sleep
+WHERE user_id = $1 AND bucket >= $2
+ORDER BY bucket ASC
+`
+
+type GetDailySleepParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Bucket interface{} `json:"bucket"`
+}
+
+func (q *Queries) GetDailySleep(ctx context.Context, arg GetDailySleepParams) ([]DailySleep, error) {
+	rows, err := q.db.Query(ctx, getDailySleep, arg.UserID, arg.Bucket)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DailySleep{}
+	for rows.Next() {
+		var i DailySleep
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Bucket,
+			&i.AvgPerformance,
+			&i.AvgEfficiency,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getDailyStrain = `-- name: GetDailyStrain :many
+
 SELECT user_id, bucket, avg_strain, max_strain FROM daily_strain
 WHERE user_id = $1 AND bucket >= $2
 ORDER BY bucket ASC
@@ -122,13 +165,16 @@ type GetDailyStrainParams struct {
 	Bucket interface{} `json:"bucket"`
 }
 
+// ---------------------------------------------------------------------------
+// Continuous Aggregate Queries (dashboard insights)
+// ---------------------------------------------------------------------------
 func (q *Queries) GetDailyStrain(ctx context.Context, arg GetDailyStrainParams) ([]DailyStrain, error) {
 	rows, err := q.db.Query(ctx, getDailyStrain, arg.UserID, arg.Bucket)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []DailyStrain
+	items := []DailyStrain{}
 	for rows.Next() {
 		var i DailyStrain
 		if err := rows.Scan(
@@ -148,7 +194,7 @@ func (q *Queries) GetDailyStrain(ctx context.Context, arg GetDailyStrainParams) 
 }
 
 const getPendingWebhookEvents = `-- name: GetPendingWebhookEvents :many
-SELECT id, payload, status, created_at FROM webhook_events
+SELECT id, payload, status, retry_count, created_at, processed_at FROM webhook_events
 WHERE status = 'pending'
 ORDER BY created_at ASC
 LIMIT $1
@@ -160,14 +206,64 @@ func (q *Queries) GetPendingWebhookEvents(ctx context.Context, limit int32) ([]W
 		return nil, err
 	}
 	defer rows.Close()
-	var items []WebhookEvent
+	items := []WebhookEvent{}
 	for rows.Next() {
 		var i WebhookEvent
 		if err := rows.Scan(
 			&i.ID,
 			&i.Payload,
 			&i.Status,
+			&i.RetryCount,
 			&i.CreatedAt,
+			&i.ProcessedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getRecoveries = `-- name: GetRecoveries :many
+SELECT id, user_id, start_time, timezone_offset, recovery_score, resting_heart_rate, hrv_rmssd_milli, spo2_percentage, skin_temp_celsius, sleep_id, score_state, user_calibrating, created_at, updated_at FROM recoveries
+WHERE user_id = $1 AND start_time < $2
+ORDER BY start_time DESC
+LIMIT $3
+`
+
+type GetRecoveriesParams struct {
+	UserID    pgtype.UUID        `json:"user_id"`
+	StartTime pgtype.Timestamptz `json:"start_time"`
+	Limit     int32              `json:"limit"`
+}
+
+func (q *Queries) GetRecoveries(ctx context.Context, arg GetRecoveriesParams) ([]Recovery, error) {
+	rows, err := q.db.Query(ctx, getRecoveries, arg.UserID, arg.StartTime, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Recovery{}
+	for rows.Next() {
+		var i Recovery
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.StartTime,
+			&i.TimezoneOffset,
+			&i.RecoveryScore,
+			&i.RestingHeartRate,
+			&i.HrvRmssdMilli,
+			&i.Spo2Percentage,
+			&i.SkinTempCelsius,
+			&i.SleepID,
+			&i.ScoreState,
+			&i.UserCalibrating,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -180,7 +276,7 @@ func (q *Queries) GetPendingWebhookEvents(ctx context.Context, limit int32) ([]W
 }
 
 const getSleeps = `-- name: GetSleeps :many
-SELECT id, user_id, start_time, end_time, timezone_offset, performance_score, created_at, updated_at, nap, respiratory_rate, sleep_consistency_percentage, sleep_efficiency_percentage, sleep_debt_milli, total_in_bed_time_milli, total_awake_time_milli, total_no_data_time_milli, total_light_sleep_time_milli, total_slow_wave_sleep_time_milli, total_rem_sleep_time_milli, sleep_cycle_count, disturbance_count, cycle_id, score_state, baseline_milli, need_from_recent_strain_milli, need_from_recent_nap_milli FROM sleeps
+SELECT id, user_id, start_time, end_time, timezone_offset, performance_score, nap, respiratory_rate, sleep_consistency_percentage, sleep_efficiency_percentage, sleep_debt_milli, total_in_bed_time_milli, total_awake_time_milli, total_no_data_time_milli, total_light_sleep_time_milli, total_slow_wave_sleep_time_milli, total_rem_sleep_time_milli, sleep_cycle_count, disturbance_count, cycle_id, score_state, baseline_milli, need_from_recent_strain_milli, need_from_recent_nap_milli, created_at, updated_at FROM sleeps
 WHERE user_id = $1 AND start_time < $2
 ORDER BY start_time DESC
 LIMIT $3
@@ -198,7 +294,7 @@ func (q *Queries) GetSleeps(ctx context.Context, arg GetSleepsParams) ([]Sleep, 
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Sleep
+	items := []Sleep{}
 	for rows.Next() {
 		var i Sleep
 		if err := rows.Scan(
@@ -208,8 +304,6 @@ func (q *Queries) GetSleeps(ctx context.Context, arg GetSleepsParams) ([]Sleep, 
 			&i.EndTime,
 			&i.TimezoneOffset,
 			&i.PerformanceScore,
-			&i.CreatedAt,
-			&i.UpdatedAt,
 			&i.Nap,
 			&i.RespiratoryRate,
 			&i.SleepConsistencyPercentage,
@@ -228,6 +322,8 @@ func (q *Queries) GetSleeps(ctx context.Context, arg GetSleepsParams) ([]Sleep, 
 			&i.BaselineMilli,
 			&i.NeedFromRecentStrainMilli,
 			&i.NeedFromRecentNapMilli,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -278,7 +374,7 @@ func (q *Queries) GetUserByWhoopID(ctx context.Context, whoopUserID string) (Use
 }
 
 const getWorkouts = `-- name: GetWorkouts :many
-SELECT id, user_id, start_time, end_time, timezone_offset, sport_id, strain, created_at, updated_at, average_heart_rate, max_heart_rate, kilojoule, percent_recorded, distance_meter, altitude_gain_meter, altitude_change_meter, zone_zero_milli, zone_one_milli, zone_two_milli, zone_three_milli, zone_four_milli, zone_five_milli, sport_name, score_state FROM workouts
+SELECT id, user_id, start_time, end_time, timezone_offset, sport_id, sport_name, strain, average_heart_rate, max_heart_rate, kilojoule, percent_recorded, distance_meter, altitude_gain_meter, altitude_change_meter, zone_zero_milli, zone_one_milli, zone_two_milli, zone_three_milli, zone_four_milli, zone_five_milli, score_state, created_at, updated_at FROM workouts
 WHERE user_id = $1 AND start_time < $2
 ORDER BY start_time DESC
 LIMIT $3
@@ -296,7 +392,7 @@ func (q *Queries) GetWorkouts(ctx context.Context, arg GetWorkoutsParams) ([]Wor
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Workout
+	items := []Workout{}
 	for rows.Next() {
 		var i Workout
 		if err := rows.Scan(
@@ -306,9 +402,8 @@ func (q *Queries) GetWorkouts(ctx context.Context, arg GetWorkoutsParams) ([]Wor
 			&i.EndTime,
 			&i.TimezoneOffset,
 			&i.SportID,
+			&i.SportName,
 			&i.Strain,
-			&i.CreatedAt,
-			&i.UpdatedAt,
 			&i.AverageHeartRate,
 			&i.MaxHeartRate,
 			&i.Kilojoule,
@@ -322,8 +417,9 @@ func (q *Queries) GetWorkouts(ctx context.Context, arg GetWorkoutsParams) ([]Wor
 			&i.ZoneThreeMilli,
 			&i.ZoneFourMilli,
 			&i.ZoneFiveMilli,
-			&i.SportName,
 			&i.ScoreState,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -337,7 +433,7 @@ func (q *Queries) GetWorkouts(ctx context.Context, arg GetWorkoutsParams) ([]Wor
 
 const updateWebhookEventStatus = `-- name: UpdateWebhookEventStatus :exec
 UPDATE webhook_events
-SET status = $2
+SET status = $2, processed_at = NOW()
 WHERE id = $1
 `
 
@@ -381,6 +477,7 @@ func (q *Queries) UpsertBodyMeasurement(ctx context.Context, arg UpsertBodyMeasu
 }
 
 const upsertCycle = `-- name: UpsertCycle :exec
+
 INSERT INTO cycles (id, user_id, start_time, end_time, timezone_offset, strain, kilojoule, average_heart_rate, max_heart_rate, score_state, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
 ON CONFLICT (id, start_time) DO UPDATE SET
@@ -407,6 +504,9 @@ type UpsertCycleParams struct {
 	ScoreState       pgtype.Text        `json:"score_state"`
 }
 
+// ---------------------------------------------------------------------------
+// Cycles (daily physiological cycles with strain)
+// ---------------------------------------------------------------------------
 func (q *Queries) UpsertCycle(ctx context.Context, arg UpsertCycleParams) error {
 	_, err := q.db.Exec(ctx, upsertCycle,
 		arg.ID,
@@ -424,6 +524,7 @@ func (q *Queries) UpsertCycle(ctx context.Context, arg UpsertCycleParams) error 
 }
 
 const upsertRecovery = `-- name: UpsertRecovery :exec
+
 INSERT INTO recoveries (id, user_id, start_time, timezone_offset, recovery_score, resting_heart_rate, hrv_rmssd_milli, spo2_percentage, skin_temp_celsius, sleep_id, score_state, user_calibrating, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
 ON CONFLICT (id, start_time) DO UPDATE SET
@@ -454,6 +555,9 @@ type UpsertRecoveryParams struct {
 	UserCalibrating  pgtype.Bool        `json:"user_calibrating"`
 }
 
+// ---------------------------------------------------------------------------
+// Recoveries (daily recovery with HRV, RHR, SpO2, skin temp)
+// ---------------------------------------------------------------------------
 func (q *Queries) UpsertRecovery(ctx context.Context, arg UpsertRecoveryParams) error {
 	_, err := q.db.Exec(ctx, upsertRecovery,
 		arg.ID,
@@ -473,6 +577,7 @@ func (q *Queries) UpsertRecovery(ctx context.Context, arg UpsertRecoveryParams) 
 }
 
 const upsertSleep = `-- name: UpsertSleep :exec
+
 INSERT INTO sleeps (id, user_id, start_time, end_time, timezone_offset, performance_score, nap, respiratory_rate, sleep_consistency_percentage, sleep_efficiency_percentage, sleep_debt_milli, total_in_bed_time_milli, total_awake_time_milli, total_no_data_time_milli, total_light_sleep_time_milli, total_slow_wave_sleep_time_milli, total_rem_sleep_time_milli, sleep_cycle_count, disturbance_count, cycle_id, score_state, baseline_milli, need_from_recent_strain_milli, need_from_recent_nap_milli, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, NOW(), NOW())
 ON CONFLICT (id, start_time) DO UPDATE SET
@@ -527,6 +632,9 @@ type UpsertSleepParams struct {
 	NeedFromRecentNapMilli      pgtype.Int4        `json:"need_from_recent_nap_milli"`
 }
 
+// ---------------------------------------------------------------------------
+// Sleeps (sessions with stage breakdowns and sleep need)
+// ---------------------------------------------------------------------------
 func (q *Queries) UpsertSleep(ctx context.Context, arg UpsertSleepParams) error {
 	_, err := q.db.Exec(ctx, upsertSleep,
 		arg.ID,
@@ -558,6 +666,8 @@ func (q *Queries) UpsertSleep(ctx context.Context, arg UpsertSleepParams) error 
 }
 
 const upsertUser = `-- name: UpsertUser :one
+
+
 INSERT INTO users (whoop_user_id, encrypted_access_token, encrypted_refresh_token, created_at, updated_at)
 VALUES ($1, $2, $3, NOW(), NOW())
 ON CONFLICT (whoop_user_id) DO UPDATE SET
@@ -573,6 +683,15 @@ type UpsertUserParams struct {
 	EncryptedRefreshToken []byte `json:"encrypted_refresh_token"`
 }
 
+// =============================================================================
+// WHOOP Stats — SQL Queries (sqlc)
+// =============================================================================
+// These queries are compiled by sqlc into type-safe Go code.
+// See sqlc.yaml for configuration.
+// =============================================================================
+// ---------------------------------------------------------------------------
+// Users & Authentication
+// ---------------------------------------------------------------------------
 func (q *Queries) UpsertUser(ctx context.Context, arg UpsertUserParams) (User, error) {
 	row := q.db.QueryRow(ctx, upsertUser, arg.WhoopUserID, arg.EncryptedAccessToken, arg.EncryptedRefreshToken)
 	var i User
@@ -588,6 +707,7 @@ func (q *Queries) UpsertUser(ctx context.Context, arg UpsertUserParams) (User, e
 }
 
 const upsertUserProfile = `-- name: UpsertUserProfile :exec
+
 INSERT INTO user_profiles (id, whoop_user_id, email, first_name, last_name, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (id) DO UPDATE SET
@@ -608,6 +728,9 @@ type UpsertUserProfileParams struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
+// ---------------------------------------------------------------------------
+// User Profile & Body Measurements
+// ---------------------------------------------------------------------------
 func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfileParams) error {
 	_, err := q.db.Exec(ctx, upsertUserProfile,
 		arg.ID,
@@ -622,6 +745,7 @@ func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfilePa
 }
 
 const upsertWorkout = `-- name: UpsertWorkout :exec
+
 INSERT INTO workouts (id, user_id, start_time, end_time, timezone_offset, sport_id, strain, average_heart_rate, max_heart_rate, kilojoule, percent_recorded, distance_meter, altitude_gain_meter, altitude_change_meter, zone_zero_milli, zone_one_milli, zone_two_milli, zone_three_milli, zone_four_milli, zone_five_milli, sport_name, score_state, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NOW(), NOW())
 ON CONFLICT (id, start_time) DO UPDATE SET
@@ -672,6 +796,9 @@ type UpsertWorkoutParams struct {
 	ScoreState          pgtype.Text        `json:"score_state"`
 }
 
+// ---------------------------------------------------------------------------
+// Workouts (sessions with HR zones, GPS data, sport classification)
+// ---------------------------------------------------------------------------
 func (q *Queries) UpsertWorkout(ctx context.Context, arg UpsertWorkoutParams) error {
 	_, err := q.db.Exec(ctx, upsertWorkout,
 		arg.ID,

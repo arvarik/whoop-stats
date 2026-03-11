@@ -1,3 +1,9 @@
+// Package main is the entry point for the whoop-stats server.
+// It supports two operating modes:
+//   - poll: Periodically fetches data from the WHOOP API (for homelabs behind NAT)
+//   - webhook: Receives push notifications from WHOOP (requires public endpoint)
+//
+// In both modes, a REST API server is started to serve the frontend dashboard.
 package main
 
 import (
@@ -24,43 +30,40 @@ import (
 )
 
 func main() {
-	// Parse CLI flags
 	modeFlag := flag.String("mode", "poll", "Operating mode: 'poll' or 'webhook'")
 	userIDFlag := flag.String("user", "12345", "WHOOP User ID to poll (only used in poll mode)")
 	flag.Parse()
 
-	// 1. Initial Logger for Setup
+	// Validate mode early
+	if *modeFlag != "poll" && *modeFlag != "webhook" {
+		fmt.Fprintf(os.Stderr, "Error: unknown mode %q (must be 'poll' or 'webhook')\n", *modeFlag)
+		os.Exit(1)
+	}
+
+	// Bootstrap logger for startup messages
 	setupLogger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// 2. Load Configuration
-	cfg, err := config.LoadConfig(ctx)
+	// Load and validate configuration
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		setupLogger.Error("Failed to load configuration", "error", err)
 		os.Exit(1)
 	}
 
-	// 3. Re-initialize Logger with Configured Level
-	var level slog.Level
-	switch strings.ToLower(cfg.LogLevel) {
-	case "debug":
-		level = slog.LevelDebug
-	case "info":
-		level = slog.LevelInfo
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo
-	}
-
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
+	// Re-initialize logger with configured level
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)}))
 	slog.SetDefault(logger)
 
-	// 4. Initialize Database Connection Pool
+	logger.Info("Starting whoop-stats",
+		"mode", *modeFlag,
+		"port", cfg.ServerPort,
+		"log_level", cfg.LogLevel,
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Initialize database connection pool
 	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
 		logger.Error("Failed to parse database URL", "error", err)
@@ -78,48 +81,35 @@ func main() {
 		logger.Error("Database is not reachable", "error", err)
 		os.Exit(1)
 	}
-	logger.Info("Successfully connected to TimescaleDB")
+	logger.Info("Connected to TimescaleDB")
 
 	queries := db.New(dbPool)
-	store := storage.NewStorage(dbPool)
+	store := storage.NewStorage(dbPool, logger)
 	authManager := auth.NewManager(cfg, queries, logger)
 
-	// Graceful Shutdown setup
+	// Graceful shutdown setup
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 
 	var wg sync.WaitGroup
 
-	// Create a single poller instance. If in poll mode, we start its loops.
-	// If in webhook mode, we just pass it to the API handler for ad-hoc manual sync triggers.
+	// Poller is created in both modes — in webhook mode it's only used for ad-hoc /sync triggers
 	appPoller := poller.NewPoller(cfg, authManager, store, logger, *userIDFlag)
 
 	if *modeFlag == "poll" {
-		// Start Poller loops
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			appPoller.Start(ctx)
 		}()
-		
-		// Still start API Server so the frontend can hit /api/v1/sync and /api/v1/cycles
-		apiHandler := api.NewHandler(queries, dbPool, authManager, store, appPoller, logger)
-		mux := api.NewServer(cfg, apiHandler, logger)
+	}
 
-		srv := &http.Server{
-			Addr:    fmt.Sprintf(":%s", cfg.ServerPort),
-			Handler: mux,
-		}
+	// Build the API router
+	apiHandler := api.NewHandler(queries, dbPool, authManager, store, appPoller, logger)
+	mux := api.NewServer(cfg, apiHandler, logger)
 
-		go func() {
-			logger.Info("Starting API Server in Poll Mode", "port", cfg.ServerPort)
-			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				logger.Error("Server error", "error", err)
-			}
-		}()
-
-	} else if *modeFlag == "webhook" {
-		// Start Webhook Worker
+	// In webhook mode, attach the webhook endpoint
+	if *modeFlag == "webhook" {
 		worker := webhook.NewWorker(authManager, store, queries, logger)
 		wg.Add(1)
 		go func() {
@@ -127,47 +117,57 @@ func main() {
 			worker.Start(ctx)
 		}()
 
-		// Start HTTP Server for Webhooks & API
 		handler := webhook.NewHandler(cfg.WhoopWebhookSecret, dbPool, logger)
-
-		apiHandler := api.NewHandler(queries, dbPool, authManager, store, appPoller, logger)
-		mux := api.NewServer(cfg, apiHandler, logger)
 		mux.Handle("/webhook", handler)
-
-		srv := &http.Server{
-			Addr:    fmt.Sprintf(":%s", cfg.ServerPort),
-			Handler: mux,
-		}
-
-		go func() {
-			logger.Info("Starting Webhook & API Server", "port", cfg.ServerPort)
-			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				logger.Error("Server error", "error", err)
-			}
-		}()
-
-		// Handle shutdown for HTTP server
-		go func() {
-			<-ctx.Done()
-			shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancelShutdown()
-			if err := srv.Shutdown(shutdownCtx); err != nil {
-				logger.Error("HTTP server shutdown error", "error", err)
-			}
-		}()
-	} else {
-		logger.Error("Unknown mode", "mode", *modeFlag)
-		os.Exit(1)
 	}
+
+	// Start HTTP server (shared for both modes)
+	srv := &http.Server{
+		Addr:         fmt.Sprintf(":%s", cfg.ServerPort),
+		Handler:      mux,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	go func() {
+		logger.Info("API server listening", "addr", srv.Addr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("Server error", "error", err)
+			os.Exit(1)
+		}
+	}()
 
 	// Wait for termination signal
 	<-quit
 	logger.Info("Shutting down gracefully...")
 
-	// Cancel context to stop background workers
+	// Cancel context to stop background workers (poller, webhook worker)
 	cancel()
 
-	// Wait for workers to finish
+	// Shut down HTTP server with a deadline
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		logger.Error("HTTP server shutdown error", "error", err)
+	}
+
+	// Wait for background workers to finish
 	wg.Wait()
-	logger.Info("Shutdown complete.")
+	logger.Info("Shutdown complete")
+}
+
+// parseLogLevel maps a string log level to the corresponding slog.Level.
+func parseLogLevel(level string) slog.Level {
+	switch strings.ToLower(level) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }

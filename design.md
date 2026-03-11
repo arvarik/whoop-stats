@@ -12,14 +12,15 @@ The architecture is split into three core layers: **Database (TimescaleDB)**, **
 *   **PostgreSQL 15:** The foundational relational database.
 *   **TimescaleDB Extension:** Transforms standard Postgres into a high-performance time-series database.
 *   **Hypertables:** Data tables partitioned automatically across time intervals (`cycles`, `sleeps`, `workouts`, `recoveries`).
-*   **Continuous Aggregates:** Materialized views (`daily_strain`, `daily_recovery`) that incrementally pre-calculate data.
+*   **Continuous Aggregates:** Materialized views (`daily_strain`, `weekly_strain`, `daily_recovery`, `weekly_recovery`, `daily_sleep`) that incrementally pre-calculate data. Auto-refreshed hourly with a 3-day lookback window.
 
 ### Design Decisions & Justifications
 *   **Why TimescaleDB?** WHOOP data is inherently time-series (continuous streams of biometric data spanning months or years). Traditional RDBMS struggle with massive time-series scaling. TimescaleDB provides the strict ACID guarantees and relational constraints of Postgres alongside automatic time-partitioning (Hypertables).
 *   **Keyset Pagination over OFFSET/LIMIT:** Querying time-series data using `OFFSET x LIMIT y` becomes exponentially slower as the offset grows. We designed the schema with composite indexes (`user_id, start_time DESC`) to enable cursor-based (keyset) pagination, allowing `O(1)` query speed regardless of dataset size.
 *   **Idempotency via ON CONFLICT:** We enforce `PRIMARY KEY (id, start_time)`. This ensures that if the backend accidentally pulls or processes the same WHOOP cycle multiple times, the `INSERT ... ON CONFLICT DO UPDATE` query guarantees idempotency. No duplicate data is ever recorded.
 *   **Expanded Data Coverage:** Beyond core metrics, the schema tracks detailed sleep stages, recovery markers (SPO2, HRV, Skin Temp), heart rate zone durations for workouts, and athlete-specific data like body measurements and profile information.
-*   **Pre-computed Materialized Views:** Rather than dynamically aggregating 30-day strain trends on every dashboard load, we utilize TimescaleDB's Continuous Aggregates. The database automatically buckets and averages strain and recovery in the background. The frontend dashboard queries these views for instantaneous `O(1)` response times.
+*   **Continuous Aggregate Refresh Policies:** All aggregates include `add_continuous_aggregate_policy()` with a 1-hour refresh interval and 3-day lookback. This prevents a common TimescaleDB pitfall where aggregates are only materialized once and become stale.
+*   **Webhook Event Tracking:** The `webhook_events` table tracks `retry_count` and `processed_at` timestamps, enabling observability into webhook processing reliability and enabling future retry logic.
 
 ---
 
@@ -28,9 +29,9 @@ The architecture is split into three core layers: **Database (TimescaleDB)**, **
 ### Components
 *   **HTTP API (go-chi):** A fast, lightweight router handling REST endpoints and middleware (Auth, Rate Limiting, Request IDs).
 *   **Webhook Inbox Pattern:** An asynchronous store-and-forward engine for webhook processing.
-*   **Polling Engine:** A configurable, concurrent scraping worker for local homelab environments. Now supports full history synchronization via cursor-based pagination.
+*   **Polling Engine:** A configurable, concurrent scraping worker for local homelab environments. Supports full history synchronization via cursor-based pagination.
 *   **OAuth2 & Crypto Manager:** Secure token rotation and AES-256-GCM encryption layer.
-*   **sqlc DAL:** Type-safe database access layer dynamically generated from SQL queries.
+*   **sqlc DAL:** Type-safe database access layer dynamically generated from SQL queries. Configured with `emit_empty_slices: true` (returns `[]` instead of `nil` for empty results).
 
 ### Design Decisions & Justifications
 *   **Why Go?** Go is chosen for its statically compiled nature, extremely low memory footprint, and native concurrency (`goroutines`), making it perfect for running background polling tasks and high-throughput webhooks concurrently on low-resource homelab servers.
@@ -41,29 +42,61 @@ The architecture is split into three core layers: **Database (TimescaleDB)**, **
     *   **Dynamic Log Levels:** Configurable `LOG_LEVEL` (debug, info, warn, error) allows users to silence non-critical chatter.
     *   **RAM-Backed Ephemeral Storage:** Ephemeral directories (`/tmp`, `/var/log`) are mounted as `tmpfs` (RAM disks) in Docker.
     *   **Local Binary Logging:** Uses Docker's `local` logging driver with compression and rotation to minimize the write amplification of traditional JSON-based text logging.
-*   **Application-Level AES-256 Encryption:** OAuth Access and Refresh tokens are highly sensitive. We decrypt and encrypt them in memory on the Go backend using a user-provided 32-byte `ENCRYPTION_KEY`. Tokens rest in the database purely as `BYTEA` ciphertext, ensuring that a database dump does not compromise WHOOP API access.
-*   **Concurrency Control (Advisory Locks):** When the frontend user presses "Sync", an ad-hoc sync job fires. To prevent data race conditions, a Mutex/Advisory Lock is engaged for that specific `user_id`. If the user spam-clicks the button, the API safely returns a `409 Conflict` or `429 Too Many Requests`.
+
+### Security Hardening
+*   **AES-256-GCM Token Encryption:** OAuth tokens are encrypted in-memory before database storage. A user-provided 32-byte `ENCRYPTION_KEY` is required — no hardcoded fallbacks.
+*   **JWT Algorithm Enforcement:** Auth middleware strictly enforces `HS256` signing to prevent algorithm confusion attacks (e.g., `alg: none` or RSA-based forgery).
+*   **Configuration Validation:** All required secrets (`ENCRYPTION_KEY`, `WHOOP_CLIENT_ID`, `WHOOP_CLIENT_SECRET`) are validated at startup with clear error messages — no silent defaults.
+*   **Token File Permissions:** `.whoop_token.json` created with `0600` permissions (owner read/write only).
+*   **Per-IP Rate Limiting:** 20 req/s with burst of 50. Background goroutine cleans up stale entries every 10 minutes to prevent memory leaks.
+*   **Graceful HTTP Shutdown:** Server drains in-flight requests with configurable timeouts on SIGINT/SIGTERM.
+
+### Test Coverage
+*   **Crypto:** 7 tests (encrypt/decrypt roundtrip, nonce uniqueness, wrong key detection, tampered ciphertext, edge cases)
+*   **Auth Middleware:** 7 tests (valid token, missing header, expired, wrong key, algorithm confusion rejection)
+*   **Rate Limiter:** 3 tests (allows, blocks, per-IP isolation)
+*   **Config Validation:** 5 tests (valid config with defaults, missing/invalid required fields)
+*   **Timezone Parsing:** 11 table-driven cases (UTC, ISO offsets, colon formats, malformed input)
+*   **Storage (Integration):** 5 tests using testcontainers with TimescaleDB (cycle idempotency, sleep, workout, recovery, profile upserts)
+*   **Poller:** 2 tests (pagination with mock WHOOP API, offpeak interval logic)
 
 ---
 
 ## 3. Frontend Layer: Next.js & React
 
 ### Components
-*   **Next.js 16 (App Router):** The core full-stack React framework utilizing Server Components (RSC).
-*   **openapi-fetch & openapi-typescript:** Type-safe API client generated dynamically from the Go backend's Swagger specification.
+*   **Next.js 16 (App Router):** The core full-stack React framework utilizing Server Components (RSC) with `dynamic = "force-dynamic"` for API-dependent pages (prevents build-time prerendering failures).
+*   **openapi-fetch & openapi-typescript:** Type-safe API client generated from the Go backend's Swagger specification. Environment variables validated at module load with fail-fast errors.
 *   **Tailwind CSS v4 & Shadcn UI:** Utility-first styling combined with highly accessible, unstyled component primitives.
 *   **Recharts & Framer Motion:** High-end data visualization and fluid layout animations.
+*   **Shared Utilities:** `lib/stats.ts` provides `computeAvg`, `computeStdDev`, and `percentChange` — extracted from page components to avoid duplication.
 
 ### Design Decisions & Justifications
 *   **Server-Side Data Fetching (RSC):** The dashboard performs zero client-side fetching for its initial load. Next.js fetches the profile, cycles, sleeps, and insights in parallel directly on the server. This completely eliminates layout shift (CLS) and "loading spinners cascading," delivering the fully populated HTML instantly to the browser.
-*   **Dynamic Client Hydration (Map/Charts):** Heavy client-side libraries like `react-simple-maps` (which rely on the browser `window` object) are wrapped in `next/dynamic` with `ssr: false`. This guarantees the server render doesn't fail on window-dependent code, while keeping the main dashboard TTFB (Time to First Byte) blazing fast.
+*   **Dynamic Rendering (`force-dynamic`):** All pages use `force-dynamic` because they depend on a backend API that isn't available at build time (Docker builds happen before the database is running). This ensures pages are server-rendered on every request.
+*   **Loading & Error Boundaries:** A root `loading.tsx` provides a skeleton UI matching the dashboard layout. A root `error.tsx` provides a user-friendly error boundary with a retry button and troubleshooting guidance.
 *   **End-to-End Type Safety:** By generating `schema.d.ts` from our Go backend, the frontend API client (`openapi-fetch`) implicitly understands the shape of the database. If a database column changes name in Go, the Next.js build immediately fails, preventing silent runtime regressions.
 *   **Linear-Inspired Glassmorphism:** To mirror premium consumer applications, the UI was strictly designed using a deep dark mode (`zinc-950`). We avoided harsh borders, opting for 1px `white/10` borders, backdrop-blurs, and radial glowing gradients. Interactions are tactile (e.g., cards lifting on hover, progress bars animating via Framer Motion), replacing a "raw admin panel" vibe with a polished consumer aesthetic.
-*   **Server Actions for Cache Invalidation:** When the manual "Sync" button is pressed, the client calls a Next.js Server Action which pings the Go backend. Upon success, the Server Action invokes `revalidatePath("/")`. This natively purges Next.js's data cache and automatically streams the updated TimescaleDB data straight to the user's screen without a full page refresh.
+*   **Server Actions for Cache Invalidation:** When the manual "Sync" button is pressed, the client calls a Next.js Server Action which pings the Go backend. Upon success, the Server Action invokes `revalidatePath` for all 5 dashboard routes (`/`, `/recovery`, `/sleep`, `/strain`, `/workouts`). This natively purges Next.js's data cache and automatically streams the updated TimescaleDB data straight to the user's screen.
+*   **API Client Security:** The frontend API client validates `NEXT_PUBLIC_API_URL`, `WHOOP_STATS_ENCRYPTION_KEY`, and `WHOOP_STATS_WHOOP_USER_ID` at module load. Missing variables throw immediately with clear error messages — no hardcoded fallback secrets.
 
 ---
 
-## 4. Full System Architecture Diagram
+## 4. Docker & Deployment
+
+### SSD-Optimized Compose Configuration
+*   **tmpfs mounts:** `/tmp` and `/var/log` mounted as RAM disks to eliminate ephemeral write amplification.
+*   **Local logging driver:** Compressed binary logs with rotation (`max-size: 10m`, `max-file: 3`).
+*   **Shared memory:** TimescaleDB container runs with `shm_size: 256mb` for improved query performance.
+*   **Restart policy:** `restart: unless-stopped` for 24/7 homelab reliability.
+*   **Multi-stage Dockerfile:** Frontend uses `standalone` output with non-root user for minimal image size.
+
+### Environment Variable Architecture
+All backend variables are prefixed with `WHOOP_STATS_` and loaded via Viper. The frontend reads `NEXT_PUBLIC_API_URL` (build-time) and `WHOOP_STATS_ENCRYPTION_KEY` / `WHOOP_STATS_WHOOP_USER_ID` (server-side only via next.config.ts env pass-through).
+
+---
+
+## 5. Full System Architecture Diagram
 
 ```mermaid
 graph TD
@@ -71,34 +104,35 @@ graph TD
     User((User))
     
     %% Frontend Layer
-    subgraph Frontend [Frontend Layer - Next.js]
-        Dashboard[Dashboard Page<br/>React Server Components]
-        UI[Interactive UI<br/>Shadcn/Recharts/Framer]
-        SA[Server Actions]
-        APIClient[openapi-fetch<br/>Client]
+    subgraph Frontend ["Frontend Layer - Next.js"]
+        Dashboard["Dashboard Page<br/>React Server Components"]
+        UI["Interactive UI<br/>Shadcn/Recharts/Framer"]
+        SA["Server Actions"]
+        APIClient["openapi-fetch<br/>Client"]
+        LoadErr["Loading Skeleton<br/>Error Boundary"]
     end
 
     %% Backend Layer
-    subgraph Backend [Backend Layer - Go]
-        API[go-chi API Server<br/>Middleware & Routes]
-        Auth[Auth & Crypto Manager<br/>AES-256-GCM]
-        Poller[Polling Worker<br/>Ad-Hoc & Scheduled]
-        Webhook[Webhook Handler<br/>Inbox Pattern]
-        WebhookWorker[Webhook Background Worker]
-        SQLC[sqlc DAL<br/>Type-safe Querying]
+    subgraph Backend ["Backend Layer - Go"]
+        API["go-chi API Server<br/>Middleware & Routes"]
+        Auth["Auth & Crypto Manager<br/>AES-256-GCM + JWT HS256"]
+        Poller["Polling Worker<br/>Ad-Hoc & Scheduled"]
+        Webhook["Webhook Handler<br/>Inbox Pattern"]
+        WebhookWorker["Webhook Background Worker"]
+        SQLC["sqlc DAL<br/>Type-safe Querying"]
     end
 
     %% Database Layer
-    subgraph Database [Database Layer - TimescaleDB]
-        DB[(PostgreSQL 15)]
-        Hyper[Hypertables<br/>cycles, sleeps, etc.]
-        CAGG[Continuous Aggregates<br/>daily_strain/recovery]
-        Inbox[webhook_events Table]
-        Users[users Table]
+    subgraph Database ["Database Layer - TimescaleDB"]
+        DB[("PostgreSQL 15")]
+        Hyper["Hypertables<br/>cycles, sleeps, etc."]
+        CAGG["Continuous Aggregates<br/>daily/weekly + refresh policies"]
+        Inbox["webhook_events Table"]
+        Users["users Table"]
     end
 
     %% External
-    WHOOP[WHOOP Developer API]
+    WHOOP["WHOOP Developer API"]
     
     %% Connections - Frontend
     User -->|Views Data| Dashboard
@@ -106,6 +140,7 @@ graph TD
     Dashboard -->|Pre-fetches RSC| APIClient
     SA -->|POST /sync| APIClient
     Dashboard --> UI
+    Dashboard --> LoadErr
     APIClient -->|HTTP / REST| API
     
     %% Connections - Backend APIs

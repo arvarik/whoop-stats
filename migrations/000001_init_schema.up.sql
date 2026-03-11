@@ -1,4 +1,19 @@
+-- =============================================================================
+-- WHOOP Stats — Initial Schema
+-- =============================================================================
+-- This migration creates the full schema for the whoop-stats application:
+--   1. Core tables (users, tokens, profiles)
+--   2. Time-series hypertables (cycles, recoveries, sleeps, workouts)
+--   3. Webhook inbox for asynchronous event processing
+--   4. Performance indexes for paginated queries
+--   5. TimescaleDB continuous aggregates for dashboard roll-ups
+-- =============================================================================
+
 CREATE EXTENSION IF NOT EXISTS timescaledb;
+
+-- ---------------------------------------------------------------------------
+-- Core User Tables
+-- ---------------------------------------------------------------------------
 
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -8,13 +23,7 @@ CREATE TABLE users (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
-CREATE TABLE webhook_events (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    payload JSONB NOT NULL,
-    status VARCHAR(50) NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+COMMENT ON TABLE users IS 'Core user accounts with AES-256-GCM encrypted OAuth2 tokens';
 
 CREATE TABLE user_profiles (
     id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -25,6 +34,7 @@ CREATE TABLE user_profiles (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+COMMENT ON TABLE user_profiles IS 'WHOOP user profile data (name, email) fetched from /v1/user/profile/basic';
 
 CREATE TABLE body_measurements (
     id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -33,6 +43,27 @@ CREATE TABLE body_measurements (
     max_heart_rate INT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+COMMENT ON TABLE body_measurements IS 'User body measurements from /v1/user/measurement/body';
+
+-- ---------------------------------------------------------------------------
+-- Webhook Inbox (store-then-process pattern for zero data loss)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE webhook_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    payload JSONB NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    retry_count INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at TIMESTAMPTZ
+);
+COMMENT ON TABLE webhook_events IS 'Webhook inbox: events stored immediately on receipt, processed asynchronously by the background worker';
+
+-- ---------------------------------------------------------------------------
+-- Time-Series Hypertables
+-- ---------------------------------------------------------------------------
+-- All time-series tables use composite PKs (id, start_time) required by
+-- TimescaleDB hypertables for chunk-level uniqueness constraints.
 
 CREATE TABLE cycles (
     id BIGINT NOT NULL,
@@ -50,6 +81,7 @@ CREATE TABLE cycles (
     PRIMARY KEY (id, start_time)
 );
 SELECT create_hypertable('cycles', 'start_time');
+COMMENT ON TABLE cycles IS 'WHOOP physiological cycles (typically one per day) with strain scores';
 
 CREATE TABLE recoveries (
     id BIGINT NOT NULL,
@@ -69,6 +101,7 @@ CREATE TABLE recoveries (
     PRIMARY KEY (id, start_time)
 );
 SELECT create_hypertable('recoveries', 'start_time');
+COMMENT ON TABLE recoveries IS 'Daily recovery scores with HRV, RHR, SpO2, and skin temperature';
 
 CREATE TABLE sleeps (
     id BIGINT NOT NULL,
@@ -100,6 +133,7 @@ CREATE TABLE sleeps (
     PRIMARY KEY (id, start_time)
 );
 SELECT create_hypertable('sleeps', 'start_time');
+COMMENT ON TABLE sleeps IS 'Sleep sessions with stage breakdowns, sleep need, and debt tracking';
 
 CREATE TABLE workouts (
     id BIGINT NOT NULL,
@@ -129,15 +163,26 @@ CREATE TABLE workouts (
     PRIMARY KEY (id, start_time)
 );
 SELECT create_hypertable('workouts', 'start_time');
+COMMENT ON TABLE workouts IS 'Workout sessions with HR zones, GPS data, and sport classification';
 
+-- ---------------------------------------------------------------------------
 -- Performance Indexes
+-- ---------------------------------------------------------------------------
+-- Composite indexes on (user_id, start_time DESC) accelerate the paginated
+-- GetX queries that filter by user and order by recency.
+
 CREATE INDEX IF NOT EXISTS idx_cycles_user_start ON cycles(user_id, start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_sleeps_user_start ON sleeps(user_id, start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_workouts_user_start ON workouts(user_id, start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_recoveries_user_start ON recoveries(user_id, start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_webhook_status_created ON webhook_events(status, created_at ASC);
 
--- Continuous Aggregates for daily and weekly roll-ups
+-- ---------------------------------------------------------------------------
+-- Continuous Aggregates (materialized views auto-refreshed by TimescaleDB)
+-- ---------------------------------------------------------------------------
+-- These power the /insights endpoint and 30-day trend charts on the dashboard.
+-- Refresh policies ensure data stays current (checked hourly, looking back 3 days).
+
 CREATE MATERIALIZED VIEW daily_strain
 WITH (timescaledb.continuous) AS
 SELECT
@@ -147,6 +192,11 @@ SELECT
     MAX(strain) AS max_strain
 FROM cycles
 GROUP BY user_id, time_bucket('1 day', start_time);
+
+SELECT add_continuous_aggregate_policy('daily_strain',
+    start_offset => INTERVAL '3 days',
+    end_offset => INTERVAL '1 hour',
+    schedule_interval => INTERVAL '1 hour');
 
 CREATE MATERIALIZED VIEW weekly_strain
 WITH (timescaledb.continuous) AS
@@ -158,6 +208,11 @@ SELECT
 FROM cycles
 GROUP BY user_id, time_bucket('1 week', start_time);
 
+SELECT add_continuous_aggregate_policy('weekly_strain',
+    start_offset => INTERVAL '1 month',
+    end_offset => INTERVAL '1 hour',
+    schedule_interval => INTERVAL '1 hour');
+
 CREATE MATERIALIZED VIEW daily_recovery
 WITH (timescaledb.continuous) AS
 SELECT
@@ -167,6 +222,11 @@ SELECT
 FROM recoveries
 GROUP BY user_id, time_bucket('1 day', start_time);
 
+SELECT add_continuous_aggregate_policy('daily_recovery',
+    start_offset => INTERVAL '3 days',
+    end_offset => INTERVAL '1 hour',
+    schedule_interval => INTERVAL '1 hour');
+
 CREATE MATERIALIZED VIEW weekly_recovery
 WITH (timescaledb.continuous) AS
 SELECT
@@ -175,3 +235,24 @@ SELECT
     AVG(recovery_score) AS avg_recovery
 FROM recoveries
 GROUP BY user_id, time_bucket('1 week', start_time);
+
+SELECT add_continuous_aggregate_policy('weekly_recovery',
+    start_offset => INTERVAL '1 month',
+    end_offset => INTERVAL '1 hour',
+    schedule_interval => INTERVAL '1 hour');
+
+CREATE MATERIALIZED VIEW daily_sleep
+WITH (timescaledb.continuous) AS
+SELECT
+    user_id,
+    time_bucket('1 day', start_time) AS bucket,
+    AVG(performance_score) AS avg_performance,
+    AVG(sleep_efficiency_percentage) AS avg_efficiency
+FROM sleeps
+WHERE nap = false
+GROUP BY user_id, time_bucket('1 day', start_time);
+
+SELECT add_continuous_aggregate_policy('daily_sleep',
+    start_offset => INTERVAL '3 days',
+    end_offset => INTERVAL '1 hour',
+    schedule_interval => INTERVAL '1 hour');

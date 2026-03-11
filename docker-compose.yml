@@ -2,19 +2,23 @@ services:
   timescaledb:
     image: timescale/timescaledb:latest-pg15
     container_name: whoop-stats-db
+    restart: unless-stopped
     environment:
       - POSTGRES_DB=whoop_stats
-      - POSTGRES_USER=whoop_user
-      - POSTGRES_PASSWORD=secretpassword
+      - POSTGRES_USER=${POSTGRES_USER:-whoop_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required in .env}
     volumes:
-      - ./data/influxdb:/var/lib/postgresql/data
+      - ./data/timescaledb:/var/lib/postgresql/data
+      - ./migrations/000001_init_schema.up.sql:/docker-entrypoint-initdb.d/000001_init_schema.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U whoop_user -d whoop_stats"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-whoop_user} -d whoop_stats"]
       interval: 5s
       timeout: 5s
       retries: 5
+    # Extra shared memory for TimescaleDB continuous aggregates
+    shm_size: 256mb
     logging:
       driver: "local"
       options:
@@ -25,23 +29,28 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     container_name: whoop-stats-backend
+    restart: unless-stopped
+    command: ["./whoop-stats", "--mode=poll", "--user=${WHOOP_USER_ID}"]
     depends_on:
       timescaledb:
         condition: service_healthy
     environment:
-      - DATABASE_URL=postgres://whoop_user:secretpassword@timescaledb:5432/whoop_stats?sslmode=disable
-      - SERVER_PORT=8080
-      - LOG_LEVEL=info
-      - POLL_INTERVAL_CYCLE=4h
-      - POLL_INTERVAL_WORKOUT=30m
-      - POLL_INTERVAL_SLEEP=1h
-      - POLL_INTERVAL_SLEEP_OFFPEAK=4h
-      - POLL_INTERVAL_PROFILE=24h
+      - WHOOP_STATS_DATABASE_URL=postgres://${POSTGRES_USER:-whoop_user}:${POSTGRES_PASSWORD}@timescaledb:5432/whoop_stats?sslmode=disable
+      - WHOOP_STATS_SERVER_PORT=8080
+      - WHOOP_STATS_LOG_LEVEL=${LOG_LEVEL:-info}
+      - WHOOP_STATS_ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY is required in .env}
+      - WHOOP_STATS_WHOOP_CLIENT_ID=${WHOOP_CLIENT_ID:?WHOOP_CLIENT_ID is required in .env}
+      - WHOOP_STATS_WHOOP_CLIENT_SECRET=${WHOOP_CLIENT_SECRET:?WHOOP_CLIENT_SECRET is required in .env}
+      - WHOOP_STATS_POLL_INTERVAL_CYCLE=${POLL_INTERVAL_CYCLE:-4h}
+      - WHOOP_STATS_POLL_INTERVAL_WORKOUT=${POLL_INTERVAL_WORKOUT:-30m}
+      - WHOOP_STATS_POLL_INTERVAL_SLEEP=${POLL_INTERVAL_SLEEP:-1h}
+      - WHOOP_STATS_POLL_INTERVAL_SLEEP_OFFPEAK=${POLL_INTERVAL_SLEEP_OFFPEAK:-4h}
+      - WHOOP_STATS_POLL_INTERVAL_PROFILE=${POLL_INTERVAL_PROFILE:-24h}
     volumes:
       - ./.whoop_token.json:/app/.whoop_token.json:ro
     ports:
-      - "8082:8080"
-    # Minimize SSD wear by keeping ephemeral data in RAM
+      - "${BACKEND_PORT:-8082}:8080"
+    # Minimize SSD wear on homelab consumer drives
     tmpfs:
       - /tmp
       - /var/log
@@ -53,12 +62,17 @@ services:
   frontend:
     build:
       context: ./web
-      dockerfile: ../Dockerfile.frontend
+      dockerfile: Dockerfile
     container_name: whoop-stats-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8082
+      - NEXT_PUBLIC_API_URL=http://backend:8080
+      - WHOOP_STATS_ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - WHOOP_STATS_WHOOP_USER_ID=${WHOOP_USER_ID}
     ports:
-      - "3032:3000"
+      - "${FRONTEND_PORT:-3032}:3000"
     logging:
       driver: "local"
       options:

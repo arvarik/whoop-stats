@@ -1,0 +1,28 @@
+# Data volumes (owned by postgres, causes permission errors during build)
+data/
+
+# Git
+.git
+.github
+
+# IDE & OS
+.vscode
+.idea
+*.swp
+.DS_Store
+
+# Frontend (built separately)
+web/
+
+# Env files with secrets
+.env
+.env.*
+!.env.example
+
+# Token files
+.whoop_token.json
+
+# Design docs
+design.md
+README.md
+GEMINI.md

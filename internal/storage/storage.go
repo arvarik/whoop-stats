@@ -1,7 +1,11 @@
+// Package storage maps WHOOP API domain objects to database records via sqlc.
+// Every method performs an idempotent upsert (INSERT ... ON CONFLICT DO UPDATE)
+// ensuring no duplicate data is ever recorded.
 package storage
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"time"
@@ -12,29 +16,35 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Storage provides methods to persist WHOOP data into TimescaleDB.
 type Storage struct {
-	pool *pgxpool.Pool
-	db   *db.Queries
+	pool   *pgxpool.Pool
+	db     *db.Queries
+	logger *slog.Logger
 }
 
-func NewStorage(pool *pgxpool.Pool) *Storage {
+// NewStorage creates a new Storage instance backed by the given connection pool.
+func NewStorage(pool *pgxpool.Pool, logger *slog.Logger) *Storage {
 	return &Storage{
-		pool: pool,
-		db:   db.New(pool),
+		pool:   pool,
+		db:     db.New(pool),
+		logger: logger,
 	}
 }
 
+// DB returns the underlying sqlc Queries instance for direct query access.
 func (s *Storage) DB() *db.Queries {
 	return s.db
 }
 
-func (s *Storage) UpsertCycle(ctx context.Context, logger *slog.Logger, userID pgtype.UUID, cycle *whoop.Cycle) error {
+// UpsertCycle persists a WHOOP cycle record, updating it if it already exists.
+func (s *Storage) UpsertCycle(ctx context.Context, userID pgtype.UUID, cycle *whoop.Cycle) error {
 	endTime := pgtype.Timestamptz{Valid: false}
 	if cycle.End != nil && !cycle.End.IsZero() {
 		endTime = pgtype.Timestamptz{Time: *cycle.End, Valid: true}
 	}
 
-	var timezoneOffset = ParseTimezoneOffset(cycle.TimezoneOffset)
+	timezoneOffset := ParseTimezoneOffset(cycle.TimezoneOffset)
 
 	var strain, kilojoule pgtype.Float4
 	var avgHR, maxHR pgtype.Int4
@@ -58,20 +68,20 @@ func (s *Storage) UpsertCycle(ctx context.Context, logger *slog.Logger, userID p
 		ScoreState:       pgtype.Text{String: cycle.ScoreState, Valid: true},
 	})
 	if err != nil {
-		logger.Error("Failed to upsert cycle", "id", cycle.ID, "err", err)
-		return err
+		return fmt.Errorf("upserting cycle %d: %w", cycle.ID, err)
 	}
-	logger.Debug("Upserted cycle", "id", cycle.ID)
+	s.logger.Debug("Upserted cycle", "id", cycle.ID)
 	return nil
 }
 
-func (s *Storage) UpsertSleep(ctx context.Context, logger *slog.Logger, userID pgtype.UUID, sleep *whoop.Sleep) error {
+// UpsertSleep persists a WHOOP sleep record with all stage and need data.
+func (s *Storage) UpsertSleep(ctx context.Context, userID pgtype.UUID, sleep *whoop.Sleep) error {
 	endTime := pgtype.Timestamptz{Valid: false}
 	if !sleep.End.IsZero() {
 		endTime = pgtype.Timestamptz{Time: sleep.End, Valid: true}
 	}
 
-	var timezoneOffset = ParseTimezoneOffset(sleep.TimezoneOffset)
+	timezoneOffset := ParseTimezoneOffset(sleep.TimezoneOffset)
 
 	var performance, respiratoryRate, sleepConsistency, sleepEfficiency pgtype.Float4
 	var sleepDebt, totalInBed, totalAwake, totalNoData, totalLight, totalSlowWave, totalRem, sleepCycleCount, disturbanceCount pgtype.Int4
@@ -103,9 +113,12 @@ func (s *Storage) UpsertSleep(ctx context.Context, logger *slog.Logger, userID p
 		}
 	}
 
-	id, _ := strconv.ParseInt(sleep.ID, 10, 64)
+	id, err := strconv.ParseInt(sleep.ID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("parsing sleep ID %q: %w", sleep.ID, err)
+	}
 
-	err := s.db.UpsertSleep(ctx, db.UpsertSleepParams{
+	if err := s.db.UpsertSleep(ctx, db.UpsertSleepParams{
 		ID:                          id,
 		UserID:                      userID,
 		StartTime:                   pgtype.Timestamptz{Time: sleep.Start, Valid: true},
@@ -130,16 +143,15 @@ func (s *Storage) UpsertSleep(ctx context.Context, logger *slog.Logger, userID p
 		BaselineMilli:               baseline,
 		NeedFromRecentStrainMilli:   needStrain,
 		NeedFromRecentNapMilli:      needNap,
-	})
-	if err != nil {
-		logger.Error("Failed to upsert sleep", "id", sleep.ID, "err", err)
-		return err
+	}); err != nil {
+		return fmt.Errorf("upserting sleep %d: %w", id, err)
 	}
-	logger.Debug("Upserted sleep", "id", sleep.ID)
+	s.logger.Debug("Upserted sleep", "id", id)
 	return nil
 }
 
-func (s *Storage) UpsertRecovery(ctx context.Context, logger *slog.Logger, userID pgtype.UUID, recovery *whoop.Recovery) error {
+// UpsertRecovery persists a WHOOP recovery record.
+func (s *Storage) UpsertRecovery(ctx context.Context, userID pgtype.UUID, recovery *whoop.Recovery) error {
 	timezoneOffset := pgtype.Interval{Valid: false}
 
 	var score, rhr, hrv, spo2, skinTemp pgtype.Float4
@@ -153,10 +165,14 @@ func (s *Storage) UpsertRecovery(ctx context.Context, logger *slog.Logger, userI
 		userCalibrating = pgtype.Bool{Bool: recovery.Score.UserCalibrating, Valid: true}
 	}
 
-	sleepID, _ := strconv.ParseInt(recovery.SleepID, 10, 64)
+	sleepID, err := strconv.ParseInt(recovery.SleepID, 10, 64)
+	if err != nil && recovery.SleepID != "" {
+		return fmt.Errorf("parsing recovery sleep ID %q: %w", recovery.SleepID, err)
+	}
+
 	startTime := pgtype.Timestamptz{Time: recovery.CreatedAt, Valid: true}
 
-	err := s.db.UpsertRecovery(ctx, db.UpsertRecoveryParams{
+	if err := s.db.UpsertRecovery(ctx, db.UpsertRecoveryParams{
 		ID:               int64(recovery.CycleID),
 		UserID:           userID,
 		StartTime:        startTime,
@@ -169,22 +185,21 @@ func (s *Storage) UpsertRecovery(ctx context.Context, logger *slog.Logger, userI
 		SleepID:          pgtype.Int8{Int64: sleepID, Valid: recovery.SleepID != ""},
 		ScoreState:       pgtype.Text{String: recovery.ScoreState, Valid: true},
 		UserCalibrating:  userCalibrating,
-	})
-	if err != nil {
-		logger.Error("Failed to upsert recovery", "id", recovery.CycleID, "err", err)
-		return err
+	}); err != nil {
+		return fmt.Errorf("upserting recovery (cycle %d): %w", recovery.CycleID, err)
 	}
-	logger.Debug("Upserted recovery", "id", recovery.CycleID)
+	s.logger.Debug("Upserted recovery", "cycle_id", recovery.CycleID)
 	return nil
 }
 
-func (s *Storage) UpsertWorkout(ctx context.Context, logger *slog.Logger, userID pgtype.UUID, workout *whoop.Workout) error {
+// UpsertWorkout persists a WHOOP workout record with HR zones and GPS data.
+func (s *Storage) UpsertWorkout(ctx context.Context, userID pgtype.UUID, workout *whoop.Workout) error {
 	endTime := pgtype.Timestamptz{Valid: false}
 	if !workout.End.IsZero() {
 		endTime = pgtype.Timestamptz{Time: workout.End, Valid: true}
 	}
 
-	var timezoneOffset = ParseTimezoneOffset(workout.TimezoneOffset)
+	timezoneOffset := ParseTimezoneOffset(workout.TimezoneOffset)
 
 	var strain, kilojoule, percentRecorded, distance, altGain, altChange pgtype.Float4
 	var avgHR, maxHR, z0, z1, z2, z3, z4, z5 pgtype.Int4
@@ -217,9 +232,12 @@ func (s *Storage) UpsertWorkout(ctx context.Context, logger *slog.Logger, userID
 		}
 	}
 
-	id, _ := strconv.ParseInt(workout.ID, 10, 64)
+	id, err := strconv.ParseInt(workout.ID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("parsing workout ID %q: %w", workout.ID, err)
+	}
 
-	err := s.db.UpsertWorkout(ctx, db.UpsertWorkoutParams{
+	if err := s.db.UpsertWorkout(ctx, db.UpsertWorkoutParams{
 		ID:                  id,
 		UserID:              userID,
 		StartTime:           pgtype.Timestamptz{Time: workout.Start, Valid: true},
@@ -242,34 +260,33 @@ func (s *Storage) UpsertWorkout(ctx context.Context, logger *slog.Logger, userID
 		ZoneFiveMilli:       z5,
 		SportName:           pgtype.Text{String: workout.SportName, Valid: true},
 		ScoreState:          pgtype.Text{String: workout.ScoreState, Valid: true},
-	})
-	if err != nil {
-		logger.Error("Failed to upsert workout", "id", workout.ID, "err", err)
-		return err
+	}); err != nil {
+		return fmt.Errorf("upserting workout %d: %w", id, err)
 	}
-	logger.Debug("Upserted workout", "id", workout.ID)
+	s.logger.Debug("Upserted workout", "id", id)
 	return nil
 }
 
-func (s *Storage) UpsertUserProfile(ctx context.Context, logger *slog.Logger, userID pgtype.UUID, profile *whoop.BasicProfile) error {
+// UpsertUserProfile persists the user's basic WHOOP profile.
+func (s *Storage) UpsertUserProfile(ctx context.Context, userID pgtype.UUID, profile *whoop.BasicProfile) error {
 	err := s.db.UpsertUserProfile(ctx, db.UpsertUserProfileParams{
 		ID:          userID,
 		WhoopUserID: int64(profile.UserID),
 		Email:       pgtype.Text{String: profile.Email, Valid: true},
 		FirstName:   pgtype.Text{String: profile.FirstName, Valid: true},
 		LastName:    pgtype.Text{String: profile.LastName, Valid: true},
-		CreatedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true}, // BasicProfile doesn't have created_at
+		CreatedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
 		UpdatedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	})
 	if err != nil {
-		logger.Error("Failed to upsert user profile", "userID", userID, "err", err)
-		return err
+		return fmt.Errorf("upserting user profile: %w", err)
 	}
-	logger.Debug("Upserted user profile", "userID", userID)
+	s.logger.Debug("Upserted user profile", "user_id", userID)
 	return nil
 }
 
-func (s *Storage) UpsertBodyMeasurement(ctx context.Context, logger *slog.Logger, userID pgtype.UUID, measurement *whoop.BodyMeasurement) error {
+// UpsertBodyMeasurement persists body measurement data (height, weight, max HR).
+func (s *Storage) UpsertBodyMeasurement(ctx context.Context, userID pgtype.UUID, measurement *whoop.BodyMeasurement) error {
 	err := s.db.UpsertBodyMeasurement(ctx, db.UpsertBodyMeasurementParams{
 		ID:             userID,
 		HeightMeter:    pgtype.Float4{Float32: float32(measurement.HeightMeter), Valid: true},
@@ -278,9 +295,8 @@ func (s *Storage) UpsertBodyMeasurement(ctx context.Context, logger *slog.Logger
 		UpdatedAt:      pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	})
 	if err != nil {
-		logger.Error("Failed to upsert body measurement", "userID", userID, "err", err)
-		return err
+		return fmt.Errorf("upserting body measurement: %w", err)
 	}
-	logger.Debug("Upserted body measurement", "userID", userID)
+	s.logger.Debug("Upserted body measurement", "user_id", userID)
 	return nil
 }

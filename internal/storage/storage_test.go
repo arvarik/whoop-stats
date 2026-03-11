@@ -84,8 +84,8 @@ func TestStorage_UpsertCycleIdempotency(t *testing.T) {
 	defer cleanup()
 
 	queries := db.New(pool)
-	store := storage.NewStorage(pool)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	store := storage.NewStorage(pool, logger)
 
 	// 1. Create a dummy user
 	user, err := queries.UpsertUser(ctx, db.UpsertUserParams{
@@ -111,14 +111,14 @@ func TestStorage_UpsertCycleIdempotency(t *testing.T) {
 	}
 
 	// 3. Upsert once
-	err = store.UpsertCycle(ctx, logger, user.ID, &cycle)
+	err = store.UpsertCycle(ctx, user.ID, &cycle)
 	require.NoError(t, err)
 
 	// 4. Upsert again with modified data to test idempotency/upsert
 	cycle.Score.Strain = 15.5
 	cycle.Score.Kilojoule = 2100
 	cycle.ScoreState = "UPDATED"
-	err = store.UpsertCycle(ctx, logger, user.ID, &cycle)
+	err = store.UpsertCycle(ctx, user.ID, &cycle)
 	require.NoError(t, err)
 
 	// 5. Verify the DB
@@ -138,9 +138,9 @@ func TestStorage_UpsertSleep(t *testing.T) {
 	pool, cleanup := setupTestDB(ctx, t)
 	defer cleanup()
 
-	queries := db.New(pool)
-	store := storage.NewStorage(pool)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	store := storage.NewStorage(pool, logger)
+	queries := db.New(pool)
 
 	user, _ := queries.UpsertUser(ctx, db.UpsertUserParams{
 		WhoopUserID:           "123",
@@ -163,7 +163,7 @@ func TestStorage_UpsertSleep(t *testing.T) {
 		},
 	}
 
-	err := store.UpsertSleep(ctx, logger, user.ID, &sleep)
+	err := store.UpsertSleep(ctx, user.ID, &sleep)
 	require.NoError(t, err)
 
 	var scoreState string
@@ -182,9 +182,9 @@ func TestStorage_UpsertWorkout(t *testing.T) {
 	pool, cleanup := setupTestDB(ctx, t)
 	defer cleanup()
 
-	queries := db.New(pool)
-	store := storage.NewStorage(pool)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	queries := db.New(pool)
+	store := storage.NewStorage(pool, logger)
 
 	user, _ := queries.UpsertUser(ctx, db.UpsertUserParams{
 		WhoopUserID:           "123",
@@ -201,7 +201,7 @@ func TestStorage_UpsertWorkout(t *testing.T) {
 		ScoreState:     "SCORED",
 	}
 
-	err := store.UpsertWorkout(ctx, logger, user.ID, &workout)
+	err := store.UpsertWorkout(ctx, user.ID, &workout)
 	require.NoError(t, err)
 
 	var sportName, scoreState string
@@ -217,9 +217,9 @@ func TestStorage_UpsertUserProfile(t *testing.T) {
 	pool, cleanup := setupTestDB(ctx, t)
 	defer cleanup()
 
-	queries := db.New(pool)
-	store := storage.NewStorage(pool)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	queries := db.New(pool)
+	store := storage.NewStorage(pool, logger)
 
 	user, _ := queries.UpsertUser(ctx, db.UpsertUserParams{
 		WhoopUserID:           "123",
@@ -234,7 +234,7 @@ func TestStorage_UpsertUserProfile(t *testing.T) {
 		LastName:  "Doe",
 	}
 
-	err := store.UpsertUserProfile(ctx, logger, user.ID, &profile)
+	err := store.UpsertUserProfile(ctx, user.ID, &profile)
 	require.NoError(t, err)
 
 	var email string
@@ -249,9 +249,9 @@ func TestStorage_UpsertRecovery(t *testing.T) {
 	pool, cleanup := setupTestDB(ctx, t)
 	defer cleanup()
 
-	queries := db.New(pool)
-	store := storage.NewStorage(pool)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	queries := db.New(pool)
+	store := storage.NewStorage(pool, logger)
 
 	user, _ := queries.UpsertUser(ctx, db.UpsertUserParams{
 		WhoopUserID:           "123",
@@ -270,7 +270,7 @@ func TestStorage_UpsertRecovery(t *testing.T) {
 		},
 	}
 
-	err := store.UpsertRecovery(ctx, logger, user.ID, &recovery)
+	err := store.UpsertRecovery(ctx, user.ID, &recovery)
 	require.NoError(t, err)
 
 	var scoreState string

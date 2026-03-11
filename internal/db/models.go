@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// User body measurements from /v1/user/measurement/body
 type BodyMeasurement struct {
 	ID             pgtype.UUID        `json:"id"`
 	HeightMeter    pgtype.Float4      `json:"height_meter"`
@@ -16,6 +17,7 @@ type BodyMeasurement struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
+// WHOOP physiological cycles (typically one per day) with strain scores
 type Cycle struct {
 	ID               int64              `json:"id"`
 	UserID           pgtype.UUID        `json:"user_id"`
@@ -23,18 +25,25 @@ type Cycle struct {
 	EndTime          pgtype.Timestamptz `json:"end_time"`
 	TimezoneOffset   pgtype.Interval    `json:"timezone_offset"`
 	Strain           pgtype.Float4      `json:"strain"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	Kilojoule        pgtype.Float4      `json:"kilojoule"`
 	AverageHeartRate pgtype.Int4        `json:"average_heart_rate"`
 	MaxHeartRate     pgtype.Int4        `json:"max_heart_rate"`
 	ScoreState       pgtype.Text        `json:"score_state"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
 type DailyRecovery struct {
 	UserID      pgtype.UUID `json:"user_id"`
 	Bucket      interface{} `json:"bucket"`
 	AvgRecovery float64     `json:"avg_recovery"`
+}
+
+type DailySleep struct {
+	UserID         pgtype.UUID `json:"user_id"`
+	Bucket         interface{} `json:"bucket"`
+	AvgPerformance float64     `json:"avg_performance"`
+	AvgEfficiency  float64     `json:"avg_efficiency"`
 }
 
 type DailyStrain struct {
@@ -44,14 +53,13 @@ type DailyStrain struct {
 	MaxStrain interface{} `json:"max_strain"`
 }
 
+// Daily recovery scores with HRV, RHR, SpO2, and skin temperature
 type Recovery struct {
 	ID               int64              `json:"id"`
 	UserID           pgtype.UUID        `json:"user_id"`
 	StartTime        pgtype.Timestamptz `json:"start_time"`
 	TimezoneOffset   pgtype.Interval    `json:"timezone_offset"`
 	RecoveryScore    pgtype.Float4      `json:"recovery_score"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	RestingHeartRate pgtype.Float4      `json:"resting_heart_rate"`
 	HrvRmssdMilli    pgtype.Float4      `json:"hrv_rmssd_milli"`
 	Spo2Percentage   pgtype.Float4      `json:"spo2_percentage"`
@@ -59,8 +67,11 @@ type Recovery struct {
 	SleepID          pgtype.Int8        `json:"sleep_id"`
 	ScoreState       pgtype.Text        `json:"score_state"`
 	UserCalibrating  pgtype.Bool        `json:"user_calibrating"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
+// Sleep sessions with stage breakdowns, sleep need, and debt tracking
 type Sleep struct {
 	ID                          int64              `json:"id"`
 	UserID                      pgtype.UUID        `json:"user_id"`
@@ -68,8 +79,6 @@ type Sleep struct {
 	EndTime                     pgtype.Timestamptz `json:"end_time"`
 	TimezoneOffset              pgtype.Interval    `json:"timezone_offset"`
 	PerformanceScore            pgtype.Float4      `json:"performance_score"`
-	CreatedAt                   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                   pgtype.Timestamptz `json:"updated_at"`
 	Nap                         pgtype.Bool        `json:"nap"`
 	RespiratoryRate             pgtype.Float4      `json:"respiratory_rate"`
 	SleepConsistencyPercentage  pgtype.Float4      `json:"sleep_consistency_percentage"`
@@ -88,8 +97,11 @@ type Sleep struct {
 	BaselineMilli               pgtype.Int4        `json:"baseline_milli"`
 	NeedFromRecentStrainMilli   pgtype.Int4        `json:"need_from_recent_strain_milli"`
 	NeedFromRecentNapMilli      pgtype.Int4        `json:"need_from_recent_nap_milli"`
+	CreatedAt                   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                   pgtype.Timestamptz `json:"updated_at"`
 }
 
+// Core user accounts with AES-256-GCM encrypted OAuth2 tokens
 type User struct {
 	ID                    pgtype.UUID        `json:"id"`
 	WhoopUserID           string             `json:"whoop_user_id"`
@@ -99,6 +111,7 @@ type User struct {
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
 
+// WHOOP user profile data (name, email) fetched from /v1/user/profile/basic
 type UserProfile struct {
 	ID          pgtype.UUID        `json:"id"`
 	WhoopUserID int64              `json:"whoop_user_id"`
@@ -109,11 +122,14 @@ type UserProfile struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
+// Webhook inbox: events stored immediately on receipt, processed asynchronously by the background worker
 type WebhookEvent struct {
-	ID        pgtype.UUID        `json:"id"`
-	Payload   []byte             `json:"payload"`
-	Status    string             `json:"status"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID          pgtype.UUID        `json:"id"`
+	Payload     []byte             `json:"payload"`
+	Status      string             `json:"status"`
+	RetryCount  int32              `json:"retry_count"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ProcessedAt pgtype.Timestamptz `json:"processed_at"`
 }
 
 type WeeklyRecovery struct {
@@ -129,6 +145,7 @@ type WeeklyStrain struct {
 	MaxStrain interface{} `json:"max_strain"`
 }
 
+// Workout sessions with HR zones, GPS data, and sport classification
 type Workout struct {
 	ID                  int64              `json:"id"`
 	UserID              pgtype.UUID        `json:"user_id"`
@@ -136,9 +153,8 @@ type Workout struct {
 	EndTime             pgtype.Timestamptz `json:"end_time"`
 	TimezoneOffset      pgtype.Interval    `json:"timezone_offset"`
 	SportID             pgtype.Int4        `json:"sport_id"`
+	SportName           pgtype.Text        `json:"sport_name"`
 	Strain              pgtype.Float4      `json:"strain"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	AverageHeartRate    pgtype.Int4        `json:"average_heart_rate"`
 	MaxHeartRate        pgtype.Int4        `json:"max_heart_rate"`
 	Kilojoule           pgtype.Float4      `json:"kilojoule"`
@@ -152,6 +168,7 @@ type Workout struct {
 	ZoneThreeMilli      pgtype.Int4        `json:"zone_three_milli"`
 	ZoneFourMilli       pgtype.Int4        `json:"zone_four_milli"`
 	ZoneFiveMilli       pgtype.Int4        `json:"zone_five_milli"`
-	SportName           pgtype.Text        `json:"sport_name"`
 	ScoreState          pgtype.Text        `json:"score_state"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }

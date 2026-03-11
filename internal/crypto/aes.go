@@ -1,3 +1,6 @@
+// Package crypto provides AES-256-GCM encryption and decryption for securing
+// OAuth tokens at rest. Each encryption operation generates a random nonce to
+// ensure ciphertext uniqueness even for identical plaintexts.
 package crypto
 
 import (
