@@ -183,6 +183,7 @@ func refreshToken(clientID, clientSecret, refreshTok string) (*tokenData, error)
 	data.Set("refresh_token", refreshTok)
 	data.Set("client_id", clientID)
 	data.Set("client_secret", clientSecret)
+	data.Set("redirect_uri", "http://localhost:8081/callback")
 	data.Set("scope", "offline")
 
 	return exchangeToken(data)

@@ -26,6 +26,10 @@ import (
 // whoopTokenEndpoint is the WHOOP OAuth2 token exchange endpoint.
 const whoopTokenEndpoint = "https://api.prod.whoop.com/oauth/oauth2/token"
 
+// defaultRedirectURI must match the redirect URI used during initial OAuth authorization.
+// WHOOP requires it on refresh_token requests as well.
+const defaultRedirectURI = "http://localhost:8081/callback"
+
 // Manager handles WHOOP API authentication, including OAuth2 token refresh,
 // AES-256-GCM encrypted token storage, and per-user client caching with TTL.
 type Manager struct {
@@ -187,6 +191,7 @@ func (m *Manager) refreshToken(ctx context.Context, refreshTok string) (*tokenDa
 	data.Set("refresh_token", refreshTok)
 	data.Set("client_id", m.cfg.WhoopClientID)
 	data.Set("client_secret", m.cfg.WhoopClientSecret)
+	data.Set("redirect_uri", defaultRedirectURI)
 	data.Set("scope", "offline")
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, whoopTokenEndpoint, strings.NewReader(data.Encode()))
