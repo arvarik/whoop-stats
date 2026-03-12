@@ -207,3 +207,8 @@ ORDER BY bucket ASC;
 SELECT * FROM daily_sleep
 WHERE user_id = $1 AND bucket >= $2
 ORDER BY bucket ASC;
+
+-- name: UpdateWebhookEventStatuses :exec
+UPDATE webhook_events
+SET status = @status, processed_at = NOW()
+WHERE id = ANY(@event_ids::uuid[]);

@@ -447,6 +447,22 @@ func (q *Queries) UpdateWebhookEventStatus(ctx context.Context, arg UpdateWebhoo
 	return err
 }
 
+const updateWebhookEventStatuses = `-- name: UpdateWebhookEventStatuses :exec
+UPDATE webhook_events
+SET status = $1, processed_at = NOW()
+WHERE id = ANY($2::uuid[])
+`
+
+type UpdateWebhookEventStatusesParams struct {
+	Status   string        `json:"status"`
+	EventIds []pgtype.UUID `json:"event_ids"`
+}
+
+func (q *Queries) UpdateWebhookEventStatuses(ctx context.Context, arg UpdateWebhookEventStatusesParams) error {
+	_, err := q.db.Exec(ctx, updateWebhookEventStatuses, arg.Status, arg.EventIds)
+	return err
+}
+
 const upsertBodyMeasurement = `-- name: UpsertBodyMeasurement :exec
 INSERT INTO body_measurements (id, height_meter, weight_kilogram, max_heart_rate, updated_at)
 VALUES ($1, $2, $3, $4, $5)
