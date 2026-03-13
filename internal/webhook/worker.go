@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/arvarik/whoop-go/whoop"
 	"github.com/arvind/whoop-stats/internal/auth"
 	"github.com/arvind/whoop-stats/internal/db"
@@ -64,22 +66,33 @@ func (w *Worker) processPendingEvents(ctx context.Context) {
 		return
 	}
 
+	failedIDs := make([]pgtype.UUID, 0, len(events))
+	processedIDs := make([]pgtype.UUID, 0, len(events))
+
 	for _, record := range events {
 		if err := w.processEvent(ctx, record); err != nil {
 			w.logger.Error("Failed to process webhook event", "db_id", record.ID.String(), "error", err)
 			// Mark as failed to prevent retry loops. In production, consider
 			// adding a retry_count column with exponential backoff.
-			_ = w.db.UpdateWebhookEventStatus(ctx, db.UpdateWebhookEventStatusParams{
-				ID:     record.ID,
-				Status: "failed",
-			})
+			failedIDs = append(failedIDs, record.ID)
 		} else {
-			_ = w.db.UpdateWebhookEventStatus(ctx, db.UpdateWebhookEventStatusParams{
-				ID:     record.ID,
-				Status: "processed",
-			})
+			processedIDs = append(processedIDs, record.ID)
 			w.logger.Info("Processed webhook event", "db_id", record.ID.String())
 		}
+	}
+
+	if len(failedIDs) > 0 {
+		_ = w.db.UpdateWebhookEventStatuses(ctx, db.UpdateWebhookEventStatusesParams{
+			EventIds: failedIDs,
+			Status:   "failed",
+		})
+	}
+
+	if len(processedIDs) > 0 {
+		_ = w.db.UpdateWebhookEventStatuses(ctx, db.UpdateWebhookEventStatusesParams{
+			EventIds: processedIDs,
+			Status:   "processed",
+		})
 	}
 }
 
