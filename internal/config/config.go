@@ -20,6 +20,8 @@ type Config struct {
 	WhoopClientSecret  string `mapstructure:"WHOOP_CLIENT_SECRET"`
 	WhoopWebhookSecret string `mapstructure:"WHOOP_WEBHOOK_SECRET"`
 
+	CorsAllowedOrigins string `mapstructure:"CORS_ALLOWED_ORIGINS"`
+
 	LogLevel string `mapstructure:"LOG_LEVEL"`
 
 	// Polling intervals (Go duration strings, e.g. "4h", "30m")
@@ -45,6 +47,8 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("WHOOP_CLIENT_ID", "")
 	viper.SetDefault("WHOOP_CLIENT_SECRET", "")
 	viper.SetDefault("WHOOP_WEBHOOK_SECRET", "")
+
+	viper.SetDefault("CORS_ALLOWED_ORIGINS", "http://localhost:3032")
 
 	viper.SetDefault("POLL_INTERVAL_CYCLE", "4h")
 	viper.SetDefault("POLL_INTERVAL_WORKOUT", "30m")
