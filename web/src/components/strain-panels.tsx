@@ -2,7 +2,7 @@
 
 import { MetricCard } from "@/components/metric-card";
 import { DetailPopup, DetailRow, useDetailPopup } from "@/components/detail-popup";
-import { Flame, Zap, Heart, Activity, Dumbbell, Timer } from "lucide-react";
+import { Flame, Zap, Heart, Activity, Dumbbell } from "lucide-react";
 import { formatCalories, formatDuration, kjToCal } from "@/lib/format";
 
 interface StrainPanelData {
