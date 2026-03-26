@@ -91,6 +91,30 @@ func (h *Handler) getInternalUserID(r *http.Request) (pgtype.UUID, error) {
 	return h.authManager.GetInternalUserID(r.Context(), whoopUserID)
 }
 
+func (h *Handler) validateUserID(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
+	userID, err := h.getInternalUserID(r)
+	if err != nil {
+		sendError(w, "AUTH_ERROR", "Invalid user", http.StatusUnauthorized)
+		return pgtype.UUID{}, false
+	}
+	return userID, true
+}
+
+func (h *Handler) validateListParams(w http.ResponseWriter, r *http.Request) (pgtype.UUID, pgtype.Timestamptz, int32, bool) {
+	userID, ok := h.validateUserID(w, r)
+	if !ok {
+		return pgtype.UUID{}, pgtype.Timestamptz{}, 0, false
+	}
+
+	cursor, err := parseCursor(r)
+	if err != nil {
+		sendError(w, "INVALID_CURSOR", "Invalid cursor format", http.StatusBadRequest)
+		return pgtype.UUID{}, pgtype.Timestamptz{}, 0, false
+	}
+
+	return userID, cursor, parseLimit(r), true
+}
+
 // parseLimit reads the "limit" query parameter, clamping it between 1 and maxPageLimit.
 func parseLimit(r *http.Request) int32 {
 	limitStr := r.URL.Query().Get("limit")
@@ -161,22 +185,15 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/cycles [get]
 // @Security BearerAuth
 func (h *Handler) GetCycles(w http.ResponseWriter, r *http.Request) {
-	userID, err := h.getInternalUserID(r)
-	if err != nil {
-		sendError(w, "AUTH_ERROR", "Invalid user", http.StatusUnauthorized)
-		return
-	}
-
-	cursor, err := parseCursor(r)
-	if err != nil {
-		sendError(w, "INVALID_CURSOR", "Invalid cursor format", http.StatusBadRequest)
+	userID, cursor, limit, ok := h.validateListParams(w, r)
+	if !ok {
 		return
 	}
 
 	cycles, err := h.db.GetCycles(r.Context(), db.GetCyclesParams{
 		UserID:    userID,
 		StartTime: cursor,
-		Limit:     parseLimit(r),
+		Limit:     limit,
 	})
 	if err != nil {
 		h.logger.Error("Failed to query cycles", "error", err)
@@ -200,22 +217,15 @@ func (h *Handler) GetCycles(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/sleeps [get]
 // @Security BearerAuth
 func (h *Handler) GetSleeps(w http.ResponseWriter, r *http.Request) {
-	userID, err := h.getInternalUserID(r)
-	if err != nil {
-		sendError(w, "AUTH_ERROR", "Invalid user", http.StatusUnauthorized)
-		return
-	}
-
-	cursor, err := parseCursor(r)
-	if err != nil {
-		sendError(w, "INVALID_CURSOR", "Invalid cursor format", http.StatusBadRequest)
+	userID, cursor, limit, ok := h.validateListParams(w, r)
+	if !ok {
 		return
 	}
 
 	sleeps, err := h.db.GetSleeps(r.Context(), db.GetSleepsParams{
 		UserID:    userID,
 		StartTime: cursor,
-		Limit:     parseLimit(r),
+		Limit:     limit,
 	})
 	if err != nil {
 		h.logger.Error("Failed to query sleeps", "error", err)
@@ -239,22 +249,15 @@ func (h *Handler) GetSleeps(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/workouts [get]
 // @Security BearerAuth
 func (h *Handler) GetWorkouts(w http.ResponseWriter, r *http.Request) {
-	userID, err := h.getInternalUserID(r)
-	if err != nil {
-		sendError(w, "AUTH_ERROR", "Invalid user", http.StatusUnauthorized)
-		return
-	}
-
-	cursor, err := parseCursor(r)
-	if err != nil {
-		sendError(w, "INVALID_CURSOR", "Invalid cursor format", http.StatusBadRequest)
+	userID, cursor, limit, ok := h.validateListParams(w, r)
+	if !ok {
 		return
 	}
 
 	workouts, err := h.db.GetWorkouts(r.Context(), db.GetWorkoutsParams{
 		UserID:    userID,
 		StartTime: cursor,
-		Limit:     parseLimit(r),
+		Limit:     limit,
 	})
 	if err != nil {
 		h.logger.Error("Failed to query workouts", "error", err)
@@ -278,22 +281,15 @@ func (h *Handler) GetWorkouts(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/recoveries [get]
 // @Security BearerAuth
 func (h *Handler) GetRecoveries(w http.ResponseWriter, r *http.Request) {
-	userID, err := h.getInternalUserID(r)
-	if err != nil {
-		sendError(w, "AUTH_ERROR", "Invalid user", http.StatusUnauthorized)
-		return
-	}
-
-	cursor, err := parseCursor(r)
-	if err != nil {
-		sendError(w, "INVALID_CURSOR", "Invalid cursor format", http.StatusBadRequest)
+	userID, cursor, limit, ok := h.validateListParams(w, r)
+	if !ok {
 		return
 	}
 
 	recoveries, err := h.db.GetRecoveries(r.Context(), db.GetRecoveriesParams{
 		UserID:    userID,
 		StartTime: cursor,
-		Limit:     parseLimit(r),
+		Limit:     limit,
 	})
 	if err != nil {
 		h.logger.Error("Failed to query recoveries", "error", err)
@@ -314,9 +310,8 @@ func (h *Handler) GetRecoveries(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/insights [get]
 // @Security BearerAuth
 func (h *Handler) GetInsights(w http.ResponseWriter, r *http.Request) {
-	userID, err := h.getInternalUserID(r)
-	if err != nil {
-		sendError(w, "AUTH_ERROR", "Invalid user", http.StatusUnauthorized)
+	userID, ok := h.validateUserID(w, r)
+	if !ok {
 		return
 	}
 
