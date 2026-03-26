@@ -36,34 +36,51 @@ export default async function SleepPage() {
   const baselineMs = latest?.baseline_milli ? Number(latest.baseline_milli) : null;
   const needFromStrainMs = latest?.need_from_recent_strain_milli ? Number(latest.need_from_recent_strain_milli) : null;
   const needFromNapMs = latest?.need_from_recent_nap_milli ? Number(latest.need_from_recent_nap_milli) : null;
-  const napCount = sleeps.filter((s: ApiRecord) => s.nap).length;
+  let napCount = 0;
+  const perfValues: number[] = [];
+  const effValues: number[] = [];
+  const durations: number[] = [];
+  const deepPcts: number[] = [];
+  const remPcts: number[] = [];
+  const perfTrend: { date: string; value: number }[] = [];
+  const durationTrend: { date: string; value: number }[] = [];
+
+  for (const s of sleeps) {
+    if (s.nap) napCount++;
+
+    const l = Number(s.total_light_sleep_time_milli || 0);
+    const r = Number(s.total_rem_sleep_time_milli || 0);
+    const d = Number(s.total_slow_wave_sleep_time_milli || 0);
+    const total = l + r + d;
+
+    if (s.performance_score) {
+      const perf = Number(s.performance_score);
+      perfValues.push(perf);
+      perfTrend.push({ date: s.start_time as string, value: perf });
+    }
+
+    if (s.sleep_efficiency_percentage) {
+      effValues.push(Number(s.sleep_efficiency_percentage));
+    }
+
+    if (total > 0) {
+      durations.push(total);
+      deepPcts.push((d / total) * 100);
+      remPcts.push((r / total) * 100);
+      durationTrend.push({ date: s.start_time as string, value: total / (1000 * 60 * 60) });
+    }
+  }
+
+  // Reverse trends to show chronological order
+  perfTrend.reverse();
+  durationTrend.reverse();
 
   // Compute averages
-  const perfValues = sleeps.filter((s: ApiRecord) => s.performance_score).map((s: ApiRecord) => Number(s.performance_score));
-  const effValues = sleeps.filter((s: ApiRecord) => s.sleep_efficiency_percentage).map((s: ApiRecord) => Number(s.sleep_efficiency_percentage));
   const avg7dPerf = computeAvg(perfValues.slice(0, 7));
   const avg30dPerf = computeAvg(perfValues);
   const avg7dEfficiency = computeAvg(effValues.slice(0, 7));
   const avg30dEfficiency = computeAvg(effValues);
-
-  // Duration averages
-  const durations = sleeps.map((s: ApiRecord) => {
-    const l = Number(s.total_light_sleep_time_milli || 0);
-    const r = Number(s.total_rem_sleep_time_milli || 0);
-    const d = Number(s.total_slow_wave_sleep_time_milli || 0);
-    return l + r + d;
-  }).filter(d => d > 0);
   const avgDurationMs = computeAvg(durations);
-
-  // Average deep/REM percentage
-  const deepPcts = sleeps.map((s: ApiRecord) => {
-    const tot = Number(s.total_light_sleep_time_milli || 0) + Number(s.total_rem_sleep_time_milli || 0) + Number(s.total_slow_wave_sleep_time_milli || 0);
-    return tot > 0 ? Number(s.total_slow_wave_sleep_time_milli || 0) / tot * 100 : null;
-  }).filter((v): v is number => v !== null);
-  const remPcts = sleeps.map((s: ApiRecord) => {
-    const tot = Number(s.total_light_sleep_time_milli || 0) + Number(s.total_rem_sleep_time_milli || 0) + Number(s.total_slow_wave_sleep_time_milli || 0);
-    return tot > 0 ? Number(s.total_rem_sleep_time_milli || 0) / tot * 100 : null;
-  }).filter((v): v is number => v !== null);
   const avgDeepPct = computeAvg(deepPcts);
   const avgRemPct = computeAvg(remPcts);
 
@@ -79,19 +96,6 @@ export default async function SleepPage() {
     avg7dPerf, avg30dPerf, avg7dEfficiency, avg30dEfficiency,
     avgDurationMs, avgDeepPct, avgRemPct, perfDelta,
   };
-
-  // Trends
-  const perfTrend = sleeps
-    .filter((s: ApiRecord) => s.performance_score)
-    .map((s: ApiRecord) => ({ date: s.start_time as string, value: Number(s.performance_score) }))
-    .reverse();
-  const durationTrend = sleeps
-    .filter((s: ApiRecord) => s.total_light_sleep_time_milli || s.total_rem_sleep_time_milli || s.total_slow_wave_sleep_time_milli)
-    .map((s: ApiRecord) => {
-      const total = Number(s.total_light_sleep_time_milli || 0) + Number(s.total_rem_sleep_time_milli || 0) + Number(s.total_slow_wave_sleep_time_milli || 0);
-      return { date: s.start_time as string, value: total / (1000 * 60 * 60) };
-    })
-    .reverse();
 
   return (
     <div className="px-4 md:px-8 lg:px-10 py-6 md:py-8 max-w-7xl mx-auto space-y-6">
