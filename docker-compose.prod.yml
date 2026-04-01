@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: whoop_stats
       POSTGRES_USER: ${POSTGRES_USER:-whoop_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secretpassword}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - timescaledb-data:/var/lib/postgresql/data
     networks:
@@ -28,8 +28,8 @@ services:
     ports:
       - "8082:8080"
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-whoop_user}:${POSTGRES_PASSWORD:-secretpassword}@timescaledb:5432/whoop_stats?sslmode=disable
-      SERVER_PORT: "8080"
+      WHOOP_STATS_DATABASE_URL: postgres://${POSTGRES_USER:-whoop_user}:${POSTGRES_PASSWORD}@timescaledb:5432/whoop_stats?sslmode=disable
+      WHOOP_STATS_SERVER_PORT: "8080"
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       WHOOP_CLIENT_ID: ${WHOOP_CLIENT_ID}
       WHOOP_CLIENT_SECRET: ${WHOOP_CLIENT_SECRET}

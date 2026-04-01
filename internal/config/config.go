@@ -41,7 +41,7 @@ func LoadConfig() (*Config, error) {
 
 	// Defaults suitable for local development
 	viper.SetDefault("SERVER_PORT", "8080")
-	viper.SetDefault("DATABASE_URL", "postgres://whoop_user:secretpassword@localhost:5432/whoop_stats?sslmode=disable")
+	viper.SetDefault("DATABASE_URL", "")
 	viper.SetDefault("LOG_LEVEL", "info")
 	viper.SetDefault("ENCRYPTION_KEY", "")
 	viper.SetDefault("WHOOP_CLIENT_ID", "")
@@ -62,6 +62,10 @@ func LoadConfig() (*Config, error) {
 	}
 
 	// Validate required fields
+	if config.DatabaseURL == "" {
+		return nil, fmt.Errorf("WHOOP_STATS_DATABASE_URL is required (e.g. postgres://user:pass@localhost:5432/dbname)")
+	}
+
 	if config.EncryptionKey == "" {
 		return nil, fmt.Errorf("WHOOP_STATS_ENCRYPTION_KEY is required (32 bytes for AES-256, generate with: openssl rand -hex 16)")
 	}
