@@ -78,9 +78,8 @@ func TestLoadConfig_MissingDatabaseURL(t *testing.T) {
 
 func TestLoadConfig_MissingEncryptionKey(t *testing.T) {
 	resetViper()
+	setRequiredEnv(t)
 	setEnv(t, "WHOOP_STATS_ENCRYPTION_KEY", "")
-	setEnv(t, "WHOOP_STATS_WHOOP_CLIENT_ID", "test")
-	setEnv(t, "WHOOP_STATS_WHOOP_CLIENT_SECRET", "test")
 
 	_, err := LoadConfig()
 	if err == nil {
@@ -90,9 +89,8 @@ func TestLoadConfig_MissingEncryptionKey(t *testing.T) {
 
 func TestLoadConfig_WrongLengthEncryptionKey(t *testing.T) {
 	resetViper()
+	setRequiredEnv(t)
 	setEnv(t, "WHOOP_STATS_ENCRYPTION_KEY", "too-short")
-	setEnv(t, "WHOOP_STATS_WHOOP_CLIENT_ID", "test")
-	setEnv(t, "WHOOP_STATS_WHOOP_CLIENT_SECRET", "test")
 
 	_, err := LoadConfig()
 	if err == nil {
@@ -102,9 +100,8 @@ func TestLoadConfig_WrongLengthEncryptionKey(t *testing.T) {
 
 func TestLoadConfig_MissingClientID(t *testing.T) {
 	resetViper()
-	setEnv(t, "WHOOP_STATS_ENCRYPTION_KEY", "01234567890123456789012345678901")
+	setRequiredEnv(t)
 	setEnv(t, "WHOOP_STATS_WHOOP_CLIENT_ID", "")
-	setEnv(t, "WHOOP_STATS_WHOOP_CLIENT_SECRET", "test")
 
 	_, err := LoadConfig()
 	if err == nil {
@@ -114,8 +111,7 @@ func TestLoadConfig_MissingClientID(t *testing.T) {
 
 func TestLoadConfig_MissingClientSecret(t *testing.T) {
 	resetViper()
-	setEnv(t, "WHOOP_STATS_ENCRYPTION_KEY", "01234567890123456789012345678901")
-	setEnv(t, "WHOOP_STATS_WHOOP_CLIENT_ID", "test")
+	setRequiredEnv(t)
 	setEnv(t, "WHOOP_STATS_WHOOP_CLIENT_SECRET", "")
 
 	_, err := LoadConfig()

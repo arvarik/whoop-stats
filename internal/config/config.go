@@ -41,6 +41,7 @@ func LoadConfig() (*Config, error) {
 
 	// Defaults suitable for local development
 	viper.SetDefault("SERVER_PORT", "8080")
+	viper.SetDefault("DATABASE_URL", "")
 	viper.SetDefault("LOG_LEVEL", "info")
 	viper.SetDefault("ENCRYPTION_KEY", "")
 	viper.SetDefault("WHOOP_CLIENT_ID", "")
