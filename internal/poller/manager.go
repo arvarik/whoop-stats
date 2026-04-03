@@ -5,10 +5,11 @@ package poller
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand"
+	"math/big"
 	"sync"
 	"time"
 
@@ -100,7 +101,15 @@ func (p *Poller) waitForRateLimit(ctx context.Context, task string) error {
 // to prevent thundering herd on startup.
 func (p *Poller) pollLoop(ctx context.Context, name string, interval time.Duration, pollFunc func(ctx context.Context) error) {
 	// Initial jitter (0-60s) to stagger startup across loops
-	jitter := time.Duration(rand.Intn(60)) * time.Second
+	var jitter time.Duration
+	n, err := rand.Int(rand.Reader, big.NewInt(60))
+	if err != nil {
+		p.logger.Error("Failed to generate secure jitter, using 0", "task", name, "error", err)
+		jitter = 0
+	} else {
+		jitter = time.Duration(n.Int64()) * time.Second
+	}
+
 	select {
 	case <-time.After(jitter):
 	case <-ctx.Done():
