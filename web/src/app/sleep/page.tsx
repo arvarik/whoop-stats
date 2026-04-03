@@ -5,11 +5,9 @@ import { TrendChartWithToggle } from "@/components/trend-chart";
 import { Moon } from "lucide-react";
 import { formatDuration, formatFullDate } from "@/lib/format";
 import { computeAvg } from "@/lib/stats";
+import type { ApiRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ApiRecord = Record<string, any>;
 
 export default async function SleepPage() {
   const sleepsRes = await client.GET("/api/v1/sleeps", {
