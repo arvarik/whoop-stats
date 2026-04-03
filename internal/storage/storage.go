@@ -11,6 +11,7 @@ import (
 
 	"github.com/arvarik/whoop-go/whoop"
 	"github.com/arvind/whoop-stats/internal/db"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -36,8 +37,7 @@ func (s *Storage) DB() *db.Queries {
 	return s.db
 }
 
-// UpsertCycle persists a WHOOP cycle record, updating it if it already exists.
-func (s *Storage) UpsertCycle(ctx context.Context, userID pgtype.UUID, cycle *whoop.Cycle) error {
+func mapCycleParams(userID pgtype.UUID, cycle *whoop.Cycle) db.UpsertCycleParams {
 	endTime := pgtype.Timestamptz{Valid: false}
 	if cycle.End != nil && !cycle.End.IsZero() {
 		endTime = pgtype.Timestamptz{Time: *cycle.End, Valid: true}
@@ -54,7 +54,7 @@ func (s *Storage) UpsertCycle(ctx context.Context, userID pgtype.UUID, cycle *wh
 		maxHR = pgtype.Int4{Int32: int32(cycle.Score.MaxHeartRate), Valid: true}
 	}
 
-	err := s.db.UpsertCycle(ctx, db.UpsertCycleParams{
+	return db.UpsertCycleParams{
 		ID:               int64(cycle.ID),
 		UserID:           userID,
 		StartTime:        pgtype.Timestamptz{Time: cycle.Start, Valid: true},
@@ -65,7 +65,13 @@ func (s *Storage) UpsertCycle(ctx context.Context, userID pgtype.UUID, cycle *wh
 		AverageHeartRate: avgHR,
 		MaxHeartRate:     maxHR,
 		ScoreState:       pgtype.Text{String: cycle.ScoreState, Valid: true},
-	})
+	}
+}
+
+// UpsertCycle persists a WHOOP cycle record, updating it if it already exists.
+func (s *Storage) UpsertCycle(ctx context.Context, userID pgtype.UUID, cycle *whoop.Cycle) error {
+	params := mapCycleParams(userID, cycle)
+	err := s.db.UpsertCycle(ctx, params)
 	if err != nil {
 		return fmt.Errorf("upserting cycle %d: %w", cycle.ID, err)
 	}
@@ -73,8 +79,43 @@ func (s *Storage) UpsertCycle(ctx context.Context, userID pgtype.UUID, cycle *wh
 	return nil
 }
 
-// UpsertSleep persists a WHOOP sleep record with all stage and need data.
-func (s *Storage) UpsertSleep(ctx context.Context, userID pgtype.UUID, sleep *whoop.Sleep) error {
+// UpsertCycles persists a batch of WHOOP cycle records.
+func (s *Storage) UpsertCycles(ctx context.Context, userID pgtype.UUID, cycles []whoop.Cycle) error {
+	if len(cycles) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
+	for i := range cycles {
+		p := mapCycleParams(userID, &cycles[i])
+		batch.Queue(db.UpsertCycleSQL,
+			p.ID,
+			p.UserID,
+			p.StartTime,
+			p.EndTime,
+			p.TimezoneOffset,
+			p.Strain,
+			p.Kilojoule,
+			p.AverageHeartRate,
+			p.MaxHeartRate,
+			p.ScoreState,
+		)
+	}
+
+	br := s.pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for i := 0; i < len(cycles); i++ {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("batch upserting cycle %d: %w", cycles[i].ID, err)
+		}
+	}
+
+	s.logger.Debug("Batch upserted cycles", "count", len(cycles))
+	return nil
+}
+
+func mapSleepParams(userID pgtype.UUID, sleep *whoop.Sleep) db.UpsertSleepParams {
 	endTime := pgtype.Timestamptz{Valid: false}
 	if !sleep.End.IsZero() {
 		endTime = pgtype.Timestamptz{Time: sleep.End, Valid: true}
@@ -112,7 +153,7 @@ func (s *Storage) UpsertSleep(ctx context.Context, userID pgtype.UUID, sleep *wh
 		}
 	}
 
-	if err := s.db.UpsertSleep(ctx, db.UpsertSleepParams{
+	return db.UpsertSleepParams{
 		ID:                          sleep.ID,
 		UserID:                      userID,
 		StartTime:                   pgtype.Timestamptz{Time: sleep.Start, Valid: true},
@@ -137,15 +178,70 @@ func (s *Storage) UpsertSleep(ctx context.Context, userID pgtype.UUID, sleep *wh
 		BaselineMilli:               baseline,
 		NeedFromRecentStrainMilli:   needStrain,
 		NeedFromRecentNapMilli:      needNap,
-	}); err != nil {
+	}
+}
+
+// UpsertSleep persists a WHOOP sleep record with all stage and need data.
+func (s *Storage) UpsertSleep(ctx context.Context, userID pgtype.UUID, sleep *whoop.Sleep) error {
+	params := mapSleepParams(userID, sleep)
+	if err := s.db.UpsertSleep(ctx, params); err != nil {
 		return fmt.Errorf("upserting sleep %s: %w", sleep.ID, err)
 	}
 	s.logger.Debug("Upserted sleep", "id", sleep.ID)
 	return nil
 }
 
-// UpsertRecovery persists a WHOOP recovery record.
-func (s *Storage) UpsertRecovery(ctx context.Context, userID pgtype.UUID, recovery *whoop.Recovery) error {
+// UpsertSleeps persists a batch of WHOOP sleep records.
+func (s *Storage) UpsertSleeps(ctx context.Context, userID pgtype.UUID, sleeps []whoop.Sleep) error {
+	if len(sleeps) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
+	for i := range sleeps {
+		p := mapSleepParams(userID, &sleeps[i])
+		batch.Queue(db.UpsertSleepSQL,
+			p.ID,
+			p.UserID,
+			p.StartTime,
+			p.EndTime,
+			p.TimezoneOffset,
+			p.PerformanceScore,
+			p.Nap,
+			p.RespiratoryRate,
+			p.SleepConsistencyPercentage,
+			p.SleepEfficiencyPercentage,
+			p.SleepDebtMilli,
+			p.TotalInBedTimeMilli,
+			p.TotalAwakeTimeMilli,
+			p.TotalNoDataTimeMilli,
+			p.TotalLightSleepTimeMilli,
+			p.TotalSlowWaveSleepTimeMilli,
+			p.TotalRemSleepTimeMilli,
+			p.SleepCycleCount,
+			p.DisturbanceCount,
+			p.CycleID,
+			p.ScoreState,
+			p.BaselineMilli,
+			p.NeedFromRecentStrainMilli,
+			p.NeedFromRecentNapMilli,
+		)
+	}
+
+	br := s.pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for i := 0; i < len(sleeps); i++ {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("batch upserting sleep %s: %w", sleeps[i].ID, err)
+		}
+	}
+
+	s.logger.Debug("Batch upserted sleeps", "count", len(sleeps))
+	return nil
+}
+
+func mapRecoveryParams(userID pgtype.UUID, recovery *whoop.Recovery) db.UpsertRecoveryParams {
 	timezoneOffset := pgtype.Interval{Valid: false}
 
 	var score, rhr, hrv, spo2, skinTemp pgtype.Float4
@@ -161,7 +257,7 @@ func (s *Storage) UpsertRecovery(ctx context.Context, userID pgtype.UUID, recove
 
 	startTime := pgtype.Timestamptz{Time: recovery.CreatedAt, Valid: true}
 
-	if err := s.db.UpsertRecovery(ctx, db.UpsertRecoveryParams{
+	return db.UpsertRecoveryParams{
 		ID:               int64(recovery.CycleID),
 		UserID:           userID,
 		StartTime:        startTime,
@@ -174,15 +270,58 @@ func (s *Storage) UpsertRecovery(ctx context.Context, userID pgtype.UUID, recove
 		SleepID:          pgtype.Text{String: recovery.SleepID, Valid: recovery.SleepID != ""},
 		ScoreState:       pgtype.Text{String: recovery.ScoreState, Valid: true},
 		UserCalibrating:  userCalibrating,
-	}); err != nil {
+	}
+}
+
+// UpsertRecovery persists a WHOOP recovery record.
+func (s *Storage) UpsertRecovery(ctx context.Context, userID pgtype.UUID, recovery *whoop.Recovery) error {
+	params := mapRecoveryParams(userID, recovery)
+	if err := s.db.UpsertRecovery(ctx, params); err != nil {
 		return fmt.Errorf("upserting recovery (cycle %d): %w", recovery.CycleID, err)
 	}
 	s.logger.Debug("Upserted recovery", "cycle_id", recovery.CycleID)
 	return nil
 }
 
-// UpsertWorkout persists a WHOOP workout record with HR zones and GPS data.
-func (s *Storage) UpsertWorkout(ctx context.Context, userID pgtype.UUID, workout *whoop.Workout) error {
+// UpsertRecoveries persists a batch of WHOOP recovery records.
+func (s *Storage) UpsertRecoveries(ctx context.Context, userID pgtype.UUID, recoveries []whoop.Recovery) error {
+	if len(recoveries) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
+	for i := range recoveries {
+		p := mapRecoveryParams(userID, &recoveries[i])
+		batch.Queue(db.UpsertRecoverySQL,
+			p.ID,
+			p.UserID,
+			p.StartTime,
+			p.TimezoneOffset,
+			p.RecoveryScore,
+			p.RestingHeartRate,
+			p.HrvRmssdMilli,
+			p.Spo2Percentage,
+			p.SkinTempCelsius,
+			p.SleepID,
+			p.ScoreState,
+			p.UserCalibrating,
+		)
+	}
+
+	br := s.pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for i := 0; i < len(recoveries); i++ {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("batch upserting recovery %d: %w", recoveries[i].CycleID, err)
+		}
+	}
+
+	s.logger.Debug("Batch upserted recoveries", "count", len(recoveries))
+	return nil
+}
+
+func mapWorkoutParams(userID pgtype.UUID, workout *whoop.Workout) db.UpsertWorkoutParams {
 	endTime := pgtype.Timestamptz{Valid: false}
 	if !workout.End.IsZero() {
 		endTime = pgtype.Timestamptz{Time: workout.End, Valid: true}
@@ -221,7 +360,7 @@ func (s *Storage) UpsertWorkout(ctx context.Context, userID pgtype.UUID, workout
 		}
 	}
 
-	if err := s.db.UpsertWorkout(ctx, db.UpsertWorkoutParams{
+	return db.UpsertWorkoutParams{
 		ID:                  workout.ID,
 		UserID:              userID,
 		StartTime:           pgtype.Timestamptz{Time: workout.Start, Valid: true},
@@ -244,10 +383,64 @@ func (s *Storage) UpsertWorkout(ctx context.Context, userID pgtype.UUID, workout
 		ZoneFiveMilli:       z5,
 		SportName:           pgtype.Text{String: workout.SportName, Valid: true},
 		ScoreState:          pgtype.Text{String: workout.ScoreState, Valid: true},
-	}); err != nil {
+	}
+}
+
+// UpsertWorkout persists a WHOOP workout record with HR zones and GPS data.
+func (s *Storage) UpsertWorkout(ctx context.Context, userID pgtype.UUID, workout *whoop.Workout) error {
+	params := mapWorkoutParams(userID, workout)
+	if err := s.db.UpsertWorkout(ctx, params); err != nil {
 		return fmt.Errorf("upserting workout %s: %w", workout.ID, err)
 	}
 	s.logger.Debug("Upserted workout", "id", workout.ID)
+	return nil
+}
+
+// UpsertWorkouts persists a batch of WHOOP workout records.
+func (s *Storage) UpsertWorkouts(ctx context.Context, userID pgtype.UUID, workouts []whoop.Workout) error {
+	if len(workouts) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
+	for i := range workouts {
+		p := mapWorkoutParams(userID, &workouts[i])
+		batch.Queue(db.UpsertWorkoutSQL,
+			p.ID,
+			p.UserID,
+			p.StartTime,
+			p.EndTime,
+			p.TimezoneOffset,
+			p.SportID,
+			p.Strain,
+			p.AverageHeartRate,
+			p.MaxHeartRate,
+			p.Kilojoule,
+			p.PercentRecorded,
+			p.DistanceMeter,
+			p.AltitudeGainMeter,
+			p.AltitudeChangeMeter,
+			p.ZoneZeroMilli,
+			p.ZoneOneMilli,
+			p.ZoneTwoMilli,
+			p.ZoneThreeMilli,
+			p.ZoneFourMilli,
+			p.ZoneFiveMilli,
+			p.SportName,
+			p.ScoreState,
+		)
+	}
+
+	br := s.pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for i := 0; i < len(workouts); i++ {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("batch upserting workout %s: %w", workouts[i].ID, err)
+		}
+	}
+
+	s.logger.Debug("Batch upserted workouts", "count", len(workouts))
 	return nil
 }
 

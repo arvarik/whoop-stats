@@ -173,10 +173,8 @@ func (p *Poller) pollCyclesAndRecoveries(ctx context.Context) error {
 		totalCycles += len(cyclesPage.Records)
 		p.logger.Debug("Processing cycles page", "page", page, "records", len(cyclesPage.Records))
 
-		for _, cycle := range cyclesPage.Records {
-			if err := p.storage.UpsertCycle(ctx, internalUserID, &cycle); err != nil {
-				p.logger.Error("Failed to upsert cycle", "id", cycle.ID, "error", err)
-			}
+		if err := p.storage.UpsertCycles(ctx, internalUserID, cyclesPage.Records); err != nil {
+			p.logger.Error("Failed to batch upsert cycles", "error", err)
 		}
 
 		cyclesPage, err = cyclesPage.NextPage(ctx)
@@ -202,10 +200,8 @@ func (p *Poller) pollCyclesAndRecoveries(ctx context.Context) error {
 		totalRecoveries += len(recoveriesPage.Records)
 		p.logger.Debug("Processing recoveries page", "page", page, "records", len(recoveriesPage.Records))
 
-		for _, recovery := range recoveriesPage.Records {
-			if err := p.storage.UpsertRecovery(ctx, internalUserID, &recovery); err != nil {
-				p.logger.Error("Failed to upsert recovery", "cycle_id", recovery.CycleID, "error", err)
-			}
+		if err := p.storage.UpsertRecoveries(ctx, internalUserID, recoveriesPage.Records); err != nil {
+			p.logger.Error("Failed to batch upsert recoveries", "error", err)
 		}
 
 		recoveriesPage, err = recoveriesPage.NextPage(ctx)
@@ -243,10 +239,8 @@ func (p *Poller) pollWorkouts(ctx context.Context) error {
 		totalWorkouts += len(workoutsPage.Records)
 		p.logger.Debug("Processing workouts page", "page", page, "records", len(workoutsPage.Records))
 
-		for _, w := range workoutsPage.Records {
-			if err := p.storage.UpsertWorkout(ctx, internalUserID, &w); err != nil {
-				p.logger.Error("Failed to upsert workout", "id", w.ID, "error", err)
-			}
+		if err := p.storage.UpsertWorkouts(ctx, internalUserID, workoutsPage.Records); err != nil {
+			p.logger.Error("Failed to batch upsert workouts", "error", err)
 		}
 
 		workoutsPage, err = workoutsPage.NextPage(ctx)
@@ -298,10 +292,8 @@ func (p *Poller) pollSleeps(ctx context.Context) error {
 		totalSleeps += len(sleepsPage.Records)
 		p.logger.Debug("Processing sleeps page", "page", page, "records", len(sleepsPage.Records))
 
-		for _, s := range sleepsPage.Records {
-			if err := p.storage.UpsertSleep(ctx, internalUserID, &s); err != nil {
-				p.logger.Error("Failed to upsert sleep", "id", s.ID, "error", err)
-			}
+		if err := p.storage.UpsertSleeps(ctx, internalUserID, sleepsPage.Records); err != nil {
+			p.logger.Error("Failed to batch upsert sleeps", "error", err)
 		}
 
 		sleepsPage, err = sleepsPage.NextPage(ctx)
