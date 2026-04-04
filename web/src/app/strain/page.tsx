@@ -4,11 +4,9 @@ import { TrendChartWithToggle } from "@/components/trend-chart";
 import { Flame } from "lucide-react";
 import { formatCalories, formatFullDate, kjToCal } from "@/lib/format";
 import { computeAvg } from "@/lib/stats";
+import type { ApiRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ApiRecord = Record<string, any>;
 
 export default async function StrainPage() {
   const [cyclesRes, workoutsRes] = await Promise.all([

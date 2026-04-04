@@ -19,12 +19,9 @@ import {
   getRecoveryColor,
   getRecoveryLabel,
 } from "@/lib/format";
+import type { ApiRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ApiRecord = Record<string, any>;
 
 export default async function DashboardPage() {
   const [profileRes, cyclesRes, sleepsRes, workoutsRes, recoveriesRes] =

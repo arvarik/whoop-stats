@@ -4,13 +4,9 @@ import { TrendChartWithToggle } from "@/components/trend-chart";
 import { getRecoveryLabel, formatFullDate } from "@/lib/format";
 import { RecoveryPanels } from "@/components/recovery-panels";
 import { computeAvg, computeStdDev } from "@/lib/stats";
+import type { ApiRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ApiRecord = Record<string, any>;
-
 
 export default async function RecoveryPage() {
   const recoveriesRes = await client.GET("/api/v1/recoveries", {
