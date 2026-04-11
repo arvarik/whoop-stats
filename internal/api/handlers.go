@@ -115,6 +115,23 @@ func (h *Handler) validateListParams(w http.ResponseWriter, r *http.Request) (pg
 	return userID, cursor, parseLimit(r), true
 }
 
+// handleList is a generic helper that encapsulates the common pattern for cursor-paginated list endpoints.
+func handleList[T any](h *Handler, w http.ResponseWriter, r *http.Request, resourceName string, fetchFn func(context.Context, pgtype.UUID, pgtype.Timestamptz, int32) ([]T, error)) {
+	userID, cursor, limit, ok := h.validateListParams(w, r)
+	if !ok {
+		return
+	}
+
+	data, err := fetchFn(r.Context(), userID, cursor, limit)
+	if err != nil {
+		h.logger.Error("Failed to query "+resourceName, "error", err)
+		sendError(w, "DB_ERROR", "Failed to fetch data", http.StatusInternalServerError)
+		return
+	}
+
+	sendJSON(w, data)
+}
+
 // parseLimit reads the "limit" query parameter, clamping it between 1 and maxPageLimit.
 func parseLimit(r *http.Request) int32 {
 	limitStr := r.URL.Query().Get("limit")
@@ -185,23 +202,13 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/cycles [get]
 // @Security BearerAuth
 func (h *Handler) GetCycles(w http.ResponseWriter, r *http.Request) {
-	userID, cursor, limit, ok := h.validateListParams(w, r)
-	if !ok {
-		return
-	}
-
-	cycles, err := h.db.GetCycles(r.Context(), db.GetCyclesParams{
-		UserID:    userID,
-		StartTime: cursor,
-		Limit:     limit,
+	handleList(h, w, r, "cycles", func(ctx context.Context, userID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]db.Cycle, error) {
+		return h.db.GetCycles(ctx, db.GetCyclesParams{
+			UserID:    userID,
+			StartTime: cursor,
+			Limit:     limit,
+		})
 	})
-	if err != nil {
-		h.logger.Error("Failed to query cycles", "error", err)
-		sendError(w, "DB_ERROR", "Failed to fetch data", http.StatusInternalServerError)
-		return
-	}
-
-	sendJSON(w, cycles)
 }
 
 // @Summary Get sleeps
@@ -217,23 +224,13 @@ func (h *Handler) GetCycles(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/sleeps [get]
 // @Security BearerAuth
 func (h *Handler) GetSleeps(w http.ResponseWriter, r *http.Request) {
-	userID, cursor, limit, ok := h.validateListParams(w, r)
-	if !ok {
-		return
-	}
-
-	sleeps, err := h.db.GetSleeps(r.Context(), db.GetSleepsParams{
-		UserID:    userID,
-		StartTime: cursor,
-		Limit:     limit,
+	handleList(h, w, r, "sleeps", func(ctx context.Context, userID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]db.Sleep, error) {
+		return h.db.GetSleeps(ctx, db.GetSleepsParams{
+			UserID:    userID,
+			StartTime: cursor,
+			Limit:     limit,
+		})
 	})
-	if err != nil {
-		h.logger.Error("Failed to query sleeps", "error", err)
-		sendError(w, "DB_ERROR", "Failed to fetch data", http.StatusInternalServerError)
-		return
-	}
-
-	sendJSON(w, sleeps)
 }
 
 // @Summary Get workouts
@@ -249,23 +246,13 @@ func (h *Handler) GetSleeps(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/workouts [get]
 // @Security BearerAuth
 func (h *Handler) GetWorkouts(w http.ResponseWriter, r *http.Request) {
-	userID, cursor, limit, ok := h.validateListParams(w, r)
-	if !ok {
-		return
-	}
-
-	workouts, err := h.db.GetWorkouts(r.Context(), db.GetWorkoutsParams{
-		UserID:    userID,
-		StartTime: cursor,
-		Limit:     limit,
+	handleList(h, w, r, "workouts", func(ctx context.Context, userID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]db.Workout, error) {
+		return h.db.GetWorkouts(ctx, db.GetWorkoutsParams{
+			UserID:    userID,
+			StartTime: cursor,
+			Limit:     limit,
+		})
 	})
-	if err != nil {
-		h.logger.Error("Failed to query workouts", "error", err)
-		sendError(w, "DB_ERROR", "Failed to fetch data", http.StatusInternalServerError)
-		return
-	}
-
-	sendJSON(w, workouts)
 }
 
 // @Summary Get recoveries
@@ -281,23 +268,13 @@ func (h *Handler) GetWorkouts(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/recoveries [get]
 // @Security BearerAuth
 func (h *Handler) GetRecoveries(w http.ResponseWriter, r *http.Request) {
-	userID, cursor, limit, ok := h.validateListParams(w, r)
-	if !ok {
-		return
-	}
-
-	recoveries, err := h.db.GetRecoveries(r.Context(), db.GetRecoveriesParams{
-		UserID:    userID,
-		StartTime: cursor,
-		Limit:     limit,
+	handleList(h, w, r, "recoveries", func(ctx context.Context, userID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]db.Recovery, error) {
+		return h.db.GetRecoveries(ctx, db.GetRecoveriesParams{
+			UserID:    userID,
+			StartTime: cursor,
+			Limit:     limit,
+		})
 	})
-	if err != nil {
-		h.logger.Error("Failed to query recoveries", "error", err)
-		sendError(w, "DB_ERROR", "Failed to fetch data", http.StatusInternalServerError)
-		return
-	}
-
-	sendJSON(w, recoveries)
 }
 
 // @Summary Get insights
