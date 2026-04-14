@@ -1,57 +1,171 @@
 # Style Guide & Code Conventions
 
-_This document enforces the visual identity and coding patterns of the project. It prevents context drift as multiple agents work on the codebase. Agents MUST follow these rules strictly._
+_This document enforces the visual identity and coding patterns of the project. It prevents context drift as multiple agents work on the codebase. Agents MUST follow these rules strictly. Every rule here is verified against the actual source code._
 
-## 1. Visual Language & Tokens
-### Colors
-- **Deep Dark Mode**: Strictly designed using `zinc-950`.
-- **Borders**: Harsh borders are strictly avoided. Use 1px `white/10` borders, backdrop-blurs, and radial glowing gradients.
+## 1. Visual Design System
+
+### Color Tokens (from `web/src/app/globals.css`)
+The design system is defined via Tailwind CSS v4 `@theme inline` tokens. **Use these tokens exclusively — never use raw hex values or default Tailwind colors.**
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| `bg-background` | `#09090B` | Page background |
+| `bg-surface-0` | `#0F0F12` | Card backgrounds, sidebar |
+| `bg-surface-1` | `#18181B` | Elevated surfaces |
+| `bg-surface-2` | `#27272A` | Hover states, dividers |
+| `text-text-primary` | `#FAFAFA` | Headings, primary content |
+| `text-text-secondary` | `#A1A1AA` | Sidebar labels, secondary info |
+| `text-text-tertiary` | `#71717A` | Timestamps, hints |
+| `text-text-muted` | `#52525B` | Disabled states |
+| `border-border-subtle` | `rgba(255,255,255,0.06)` | Card borders |
+| `border-border-default` | `rgba(255,255,255,0.1)` | Default borders |
+| `border-border-hover` | `rgba(255,255,255,0.16)` | Hover borders |
+| `text-accent` / `bg-accent` | `#6366F1` | Indigo accent |
+| `text-strain` / `bg-strain` | `#3B82F6` | Strain data |
+| `text-sleep` / `bg-sleep` | `#8B5CF6` | Sleep data |
+| Recovery green | `#10B981` | Recovery ≥ 66% |
+| Recovery yellow | `#F59E0B` | Recovery 34-65% |
+| Recovery red | `#EF4444` | Recovery < 34% |
+
+### Custom Utilities
+```css
+@utility glass-card { /* Card surface: blur-24, rgba bg, subtle border, rounded-xl */ }
+@utility glass-card-hover { /* Same + hover transition: border lightens, bg shifts */ }
+```
+Use these instead of manually composing backdrop-blur classes.
 
 ### Typography
-- Minimalist, premium consumer application vibe.
+- **Font**: Inter (loaded via `next/font/google` with `--font-inter` CSS variable).
+- **Headings**: `text-text-primary`, `font-semibold`, `tracking-tight`.
+- **Body/Labels**: `text-text-secondary` or `text-text-tertiary`, `text-sm` or `text-xs`.
+- **Uppercase labels**: `text-xs font-medium uppercase tracking-wider text-text-tertiary`.
 
-### Spacing & Layout
-- **Interactions**: Tactile feedback (e.g., cards lifting on hover, progress bars animating via Framer Motion) to create a polished consumer aesthetic over a raw admin panel.
+### Icons
+- `lucide-react` exclusively. Common: `Activity`, `Moon`, `HeartPulse`, `Flame`, `TrendingUp`, `Dumbbell`.
+- Standard size: `w-4 h-4` (inline with text) or `w-3 h-3` (in subtitles).
 
-## 2. Component Patterns
-- **Frontend Tools**: Tailwind CSS v4, Shadcn UI, Recharts, Framer Motion.
-- **Dynamic Hydration**: Wrap heavy browser `window` dependent components with `next/dynamic` and `ssr: false`.
+## 2. Frontend Conventions (Next.js 16)
 
-## 3. Code Conventions
-### Architecture Patterns
-- **Next.js Server-First**: Use Server Components (RSC) for initial data fetching. Zero client-side fetching for the dashboard initial load.
-- **Go Standard Layout**: `cmd/` for entrypoints, `internal/` for handlers/services, `queries/` for DAL.
-- **Idempotent Upserts**: Use `INSERT ... ON CONFLICT DO UPDATE` via sqlc in Go, preventing duplication.
-- **Webhooks**: Use Inbox pattern—store webhook payloads immediately, process asynchronously via background worker.
+### App Router Rules
+- **ALL pages go in `web/src/app/`**. The `pages/` directory is forbidden.
+- **ALL components go in `web/src/components/`**. Shadcn primitives go in `web/src/components/ui/`.
+- **ALL utility/lib code goes in `web/src/lib/`**.
+- Pages are **Server Components by default**. Only add `"use client"` when the component needs browser APIs, event handlers, or state.
+- Use `export const dynamic = "force-dynamic"` on dashboard pages to ensure fresh data on every request.
 
-### State Management
-- Next.js data fetched via RSC. Use Server Actions for mutations. Client caches invalidated via `revalidatePath("/")`.
+### Data Fetching
+- **Initial loads**: Parallel `Promise.all()` via `openapi-fetch` in Server Components. Zero `useEffect` fetching.
+- **Mutations**: Server Actions in `web/src/app/actions.ts`. Call `revalidatePath()` for all affected routes.
+- **Type safety**: All API responses are typed via `openapi-typescript` → `schema.d.ts` → `openapi-fetch`.
 
-### Strict Typing
-- **Go**: End-to-end type safety from sqlc-generated database types to Go handlers to Swagger schema, down to Next.js API client `openapi-fetch`.
-- **TypeScript**: Rely on `openapi-typescript` definitions from `schema.d.ts`. No `any` types.
+### Component Toolkit
+| Library | Version | Usage |
+|---------|---------|-------|
+| `shadcn` | v4 | Button, Card, Badge, Skeleton, Sonner (toast) |
+| `@base-ui/react` | v1.2 | Headless UI primitives |
+| `recharts` | v2 | All charts (strain/recovery trends, HR zones) |
+| `framer-motion` | v12 | Page transitions, micro-animations |
+| `lucide-react` | v0.577 | Icon library |
+| `date-fns` | v4 | Date formatting |
+| `@number-flow/react` | v0.6 | Animated number transitions |
+| `sonner` | v2 | Toast notifications |
+
+### Dynamic Imports
+Heavy client-side libraries that access `window` must be lazy-loaded:
+```tsx
+const ChartComponent = dynamic(() => import("@/components/chart"), { ssr: false });
+```
+
+## 3. Backend Conventions (Go)
+
+### Package Layout
+- `cmd/server/` — Server entrypoint. Flag parsing, service wiring, graceful shutdown.
+- `cmd/auth/` — OAuth2 bootstrap CLI. Standalone, no server dependency.
+- `internal/api/` — HTTP handlers. Each handler method lives on the `Handler` struct.
+- `internal/auth/` — Token lifecycle (refresh, encrypt, cache, offline fallback).
+- `internal/config/` — Viper config with `WHOOP_STATS_` env prefix.
+- `internal/crypto/` — AES-256-GCM encrypt/decrypt functions.
+- `internal/db/` — **Auto-generated by sqlc**. Never edit manually.
+- `internal/middleware/` — HTTP middleware (auth, logging, rate limiting).
+- `internal/poller/` — Polling engine (4 independent loops + ad-hoc sync).
+- `internal/storage/` — Domain mapper: `whoop-go` SDK types → sqlc `UpsertXParams`.
+- `internal/webhook/` — Webhook handler (inbox) + background worker.
+
+### Error Handling
+- Always wrap errors with context: `fmt.Errorf("upserting cycle %d: %w", id, err)`.
+- HTTP errors use the `sendError()` helper with structured `ErrorResponse` JSON.
+- Use specific HTTP codes: `401 Unauthorized`, `409 Conflict`, `429 Too Many Requests`, `202 Accepted`.
+
+### Logging
+- Use `log/slog` exclusively. JSON handler by default.
+- Logger is passed as dependency — never use the global `log` package (except `cmd/auth/` bootstrap).
+- Respect `LOG_LEVEL` env var. Avoid `Debug` logs inside tight loops (SSD wear concern).
+- Health check requests (`/healthz`) are excluded from request logging.
+
+### Database Operations
+- Always go through `internal/db/` (sqlc-generated) for queries.
+- For custom SQL: add to `queries/query.sql`, run `sqlc generate`.
+- Use `pgx.Batch{}` for bulk operations (see `storage.UpsertCycles`).
+- Batch SQL strings are exposed as constants (e.g., `db.UpsertCycleSQL`).
+
+### Import Order (enforced by `goimports`)
+```go
+import (
+    "standard/library"
+
+    "github.com/third-party"
+
+    "github.com/arvind/whoop-stats/internal/..."
+)
+```
 
 ## 4. Naming Conventions
-- **Go Packages**: Lowercase, single-word. No underscores.
-- **Files**: `snake_case.go` for Go, kebab-case/camelCase per Next.js conventions in `web/`.
-- **Database Tables**: Plural `snake_case` (e.g., `webhook_events`, `users`).
-- **Next.js**: Use Server Components defaults unless explicitly marked `'use client'`.
 
-## 5. Import Ordering
-- **Go** (enforced by `goimports`):
-  1. Standard library
-  2. Third-party (`github.com/...`)
-  3. Internal packages
+| Context | Convention | Example |
+|---------|-----------|---------|
+| Go packages | Lowercase, single-word | `crypto`, `poller`, `storage` |
+| Go files | `snake_case.go` | `manager.go`, `handlers_test.go` |
+| Go test files | `*_test.go` in same package | `aes_test.go` |
+| Database tables | Plural `snake_case` | `webhook_events`, `body_measurements` |
+| Database columns | `snake_case` | `recovery_score`, `start_time` |
+| TypeScript files | `kebab-case.tsx` | `metric-card.tsx`, `sleep-panels.tsx` |
+| React components | `PascalCase` | `SyncButton`, `MetricCard` |
+| Server Actions | `camelCase` functions | `syncWhoopData()` |
+| CSS tokens | `kebab-case` | `--color-text-primary` |
+| Env vars | `SCREAMING_SNAKE_CASE` | `WHOOP_STATS_ENCRYPTION_KEY` |
 
-## 6. Documentation Standards
-- **Swagger**: Go API endpoints annotated with swag declarations to dynamically build Swagger JSON used by Next.js.
-- Focus on clean, robust API definitions to ensure type-safe contracts with the frontend.
+## 5. Swagger / API Documentation
+- Go handlers are annotated with `@Summary`, `@Description`, `@Tags`, `@Param`, `@Success`, `@Failure`, `@Router`, `@Security` swag directives.
+- Generate Swagger spec: `swag init -g cmd/server/main.go`.
+- Output: `docs/swagger.json`, `docs/swagger.yaml`, `docs/docs.go`.
+- Frontend types generated from this spec via `openapi-typescript`.
 
-## 7. Anti-Patterns (FORBIDDEN)
-- ❌ NEVER use `any` / `interface{}` in Go or TypeScript unless explicitly acting on a generic constraint.
-- ❌ NEVER write raw SQL in Go handler or service code — ALWAYS go through `sqlc` generated queries.
-- ❌ NEVER use heavy client-side API requests (`useEffect` data fetching) for dashboard initial load. MUST use Next.js RSC parallel fetching to eliminate layout shifts.
-- ❌ NEVER use `OFFSET/LIMIT` for query pagination on timeseries data. MUST use keyset/cursor pagination over composite indexes.
-- ❌ NEVER store WHOOP OAuth tokens in plaintext. MUST be AES-256-GCM encrypted `BYTEA`.
-- ❌ NEVER block the WHOOP webhook request. MUST insert into `webhook_events` (Inbox pattern) and return `200 OK` instantly to prevent timeouts.
-- ❌ NEVER process `Sync` manually without an advisory DB lock (`pg_advisory_xact_lock`) on the user id to avoid duplicate ingestions from spam-clicks.
+## 6. Anti-Patterns (FORBIDDEN)
+
+❌ **NEVER edit files in `internal/db/`** — they are auto-generated by sqlc. Modify `queries/query.sql` and run `sqlc generate`.
+
+❌ **NEVER use `database/sql`** — always use `jackc/pgx/v5` (`pgxpool`, `pgtype`).
+
+❌ **NEVER use `useEffect` for data fetching on initial page load** — use RSC parallel fetching via `Promise.all()`.
+
+❌ **NEVER create `pages/` directory routes** — App Router (`app/`) exclusively.
+
+❌ **NEVER use `pages/api/` for mutations** — use Next.js Server Actions.
+
+❌ **NEVER use `any` type in TypeScript** — all types must come from `schema.d.ts` or be explicitly defined.
+
+❌ **NEVER use `interface{}` in Go** — use concrete types from `internal/db/` or `whoop-go`.
+
+❌ **NEVER use `OFFSET/LIMIT` pagination** — use cursor-based pagination with `start_time < $cursor ORDER BY start_time DESC LIMIT $n`.
+
+❌ **NEVER store tokens in plaintext** — `internal/crypto.Encrypt()` for storage, `crypto.Decrypt()` for use.
+
+❌ **NEVER process webhooks synchronously** — insert into `webhook_events`, return `200 OK`, process in background worker.
+
+❌ **NEVER trigger concurrent syncs** — the sync endpoint uses in-memory mutex + active sync map to prevent duplicates.
+
+❌ **NEVER use raw Tailwind colors** (e.g., `bg-zinc-900`) — use the design tokens (`bg-surface-0`, `text-text-primary`, etc.).
+
+❌ **NEVER create custom CSS classes with `@apply`** — use the `@utility` directive or inline Tailwind classes.
+
+❌ **NEVER use the global `log` package in `internal/`** — pass `*slog.Logger` as a dependency.
