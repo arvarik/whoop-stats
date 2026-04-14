@@ -1,11 +1,16 @@
+-- Down migration: drops all application objects in reverse dependency order.
+
+DROP MATERIALIZED VIEW IF EXISTS daily_sleep;
 DROP MATERIALIZED VIEW IF EXISTS weekly_recovery;
 DROP MATERIALIZED VIEW IF EXISTS daily_recovery;
 DROP MATERIALIZED VIEW IF EXISTS weekly_strain;
 DROP MATERIALIZED VIEW IF EXISTS daily_strain;
 
-DROP TABLE IF EXISTS workouts CASCADE;
-DROP TABLE IF EXISTS sleeps CASCADE;
-DROP TABLE IF EXISTS recoveries CASCADE;
-DROP TABLE IF EXISTS cycles CASCADE;
-DROP TABLE IF EXISTS webhook_events CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS workouts;
+DROP TABLE IF EXISTS sleeps;
+DROP TABLE IF EXISTS recoveries;
+DROP TABLE IF EXISTS cycles;
+DROP TABLE IF EXISTS body_measurements;
+DROP TABLE IF EXISTS user_profiles;
+DROP TABLE IF EXISTS webhook_events;
+DROP TABLE IF EXISTS users;

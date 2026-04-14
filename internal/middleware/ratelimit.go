@@ -3,33 +3,49 @@ package middleware
 import (
 	"net/http"
 	"sync"
+	"time"
 
 	"golang.org/x/time/rate"
 )
 
+// IPRateLimiter returns middleware that enforces per-IP request rate limiting.
+// Stale entries are cleaned up every 10 minutes to prevent unbounded memory growth.
 func IPRateLimiter(r rate.Limit, b int) func(next http.Handler) http.Handler {
 	var mu sync.Mutex
-	visitors := make(map[string]*rate.Limiter)
-
-	getVisitor := func(ip string) *rate.Limiter {
-		mu.Lock()
-		defer mu.Unlock()
-
-		limiter, exists := visitors[ip]
-		if !exists {
-			limiter = rate.NewLimiter(r, b)
-			visitors[ip] = limiter
-		}
-
-		return limiter
+	type visitor struct {
+		limiter  *rate.Limiter
+		lastSeen time.Time
 	}
+	visitors := make(map[string]*visitor)
+
+	// Background goroutine cleans up stale entries every 10 minutes
+	go func() {
+		for {
+			time.Sleep(10 * time.Minute)
+			mu.Lock()
+			for ip, v := range visitors {
+				if time.Since(v.lastSeen) > 30*time.Minute {
+					delete(visitors, ip)
+				}
+			}
+			mu.Unlock()
+		}
+	}()
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			// Basic IP extraction. In a real app behind a proxy, we'd check X-Forwarded-For or X-Real-IP
 			ip := req.RemoteAddr
-			limiter := getVisitor(ip)
-			if !limiter.Allow() {
+
+			mu.Lock()
+			v, exists := visitors[ip]
+			if !exists {
+				v = &visitor{limiter: rate.NewLimiter(r, b)}
+				visitors[ip] = v
+			}
+			v.lastSeen = time.Now()
+			mu.Unlock()
+
+			if !v.limiter.Allow() {
 				http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
 				return
 			}

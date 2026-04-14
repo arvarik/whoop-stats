@@ -1,3 +1,5 @@
+// Package api provides the REST API handlers and router for the whoop-stats server.
+// All endpoints require JWT Bearer authentication with a whoop_user_id claim.
 package api
 
 import (
@@ -5,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -18,20 +21,28 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// defaultPageLimit is the default number of records returned per API page.
+const defaultPageLimit = 50
+
+// maxPageLimit caps the maximum records a client can request per page.
+const maxPageLimit = 200
+
+// Handler holds dependencies for all API endpoint handlers.
 type Handler struct {
 	db          *db.Queries
 	pool        *pgxpool.Pool
 	authManager *auth.Manager
 	storage     *storage.Storage
 	logger      *slog.Logger
-	poller      *poller.Poller // Used for ad-hoc sync
+	poller      *poller.Poller
 
-	// For Sync endpoint concurrency control
+	// Sync endpoint concurrency control
 	syncMutex    sync.Mutex
 	activeSyncs  map[string]bool
 	syncLimiters map[string]*rate.Limiter
 }
 
+// NewHandler creates a new Handler with all required dependencies.
 func NewHandler(queries *db.Queries, pool *pgxpool.Pool, authManager *auth.Manager, store *storage.Storage, p *poller.Poller, logger *slog.Logger) *Handler {
 	return &Handler{
 		db:           queries,
@@ -45,6 +56,7 @@ func NewHandler(queries *db.Queries, pool *pgxpool.Pool, authManager *auth.Manag
 	}
 }
 
+// ErrorResponse is the standard error envelope for all API error responses.
 type ErrorResponse struct {
 	Error struct {
 		Code    string `json:"code"`
@@ -79,6 +91,63 @@ func (h *Handler) getInternalUserID(r *http.Request) (pgtype.UUID, error) {
 	return h.authManager.GetInternalUserID(r.Context(), whoopUserID)
 }
 
+func (h *Handler) validateUserID(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
+	userID, err := h.getInternalUserID(r)
+	if err != nil {
+		sendError(w, "AUTH_ERROR", "Invalid user", http.StatusUnauthorized)
+		return pgtype.UUID{}, false
+	}
+	return userID, true
+}
+
+func (h *Handler) validateListParams(w http.ResponseWriter, r *http.Request) (pgtype.UUID, pgtype.Timestamptz, int32, bool) {
+	userID, ok := h.validateUserID(w, r)
+	if !ok {
+		return pgtype.UUID{}, pgtype.Timestamptz{}, 0, false
+	}
+
+	cursor, err := parseCursor(r)
+	if err != nil {
+		sendError(w, "INVALID_CURSOR", "Invalid cursor format", http.StatusBadRequest)
+		return pgtype.UUID{}, pgtype.Timestamptz{}, 0, false
+	}
+
+	return userID, cursor, parseLimit(r), true
+}
+
+// handleList is a generic helper that encapsulates the common pattern for cursor-paginated list endpoints.
+func handleList[T any](h *Handler, w http.ResponseWriter, r *http.Request, resourceName string, fetchFn func(context.Context, pgtype.UUID, pgtype.Timestamptz, int32) ([]T, error)) {
+	userID, cursor, limit, ok := h.validateListParams(w, r)
+	if !ok {
+		return
+	}
+
+	data, err := fetchFn(r.Context(), userID, cursor, limit)
+	if err != nil {
+		h.logger.Error("Failed to query "+resourceName, "error", err)
+		sendError(w, "DB_ERROR", "Failed to fetch data", http.StatusInternalServerError)
+		return
+	}
+
+	sendJSON(w, data)
+}
+
+// parseLimit reads the "limit" query parameter, clamping it between 1 and maxPageLimit.
+func parseLimit(r *http.Request) int32 {
+	limitStr := r.URL.Query().Get("limit")
+	if limitStr == "" {
+		return defaultPageLimit
+	}
+	n, err := strconv.Atoi(limitStr)
+	if err != nil || n < 1 {
+		return defaultPageLimit
+	}
+	if n > maxPageLimit {
+		return maxPageLimit
+	}
+	return int32(n)
+}
+
 func parseCursor(r *http.Request) (pgtype.Timestamptz, error) {
 	cursorStr := r.URL.Query().Get("cursor")
 	if cursorStr == "" {
@@ -105,14 +174,14 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	whoopUserID := h.getWhoopUserID(r)
 	client, err := h.authManager.GetClient(r.Context(), whoopUserID)
 	if err != nil {
-		h.logger.Error("Failed to get client", "error", err)
+		h.logger.Error("Failed to get WHOOP client", "error", err)
 		sendError(w, "AUTH_ERROR", "Failed to authenticate with WHOOP", http.StatusUnauthorized)
 		return
 	}
 
 	profile, err := client.User.GetBasicProfile(r.Context())
 	if err != nil {
-		h.logger.Error("Failed to get profile", "error", err)
+		h.logger.Error("Failed to fetch profile", "error", err)
 		sendError(w, "API_ERROR", "Failed to fetch profile from WHOOP", http.StatusInternalServerError)
 		return
 	}
@@ -126,39 +195,20 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Param cursor query string false "Cursor timestamp (RFC3339)"
+// @Param limit query int false "Number of records (default 50, max 200)"
 // @Success 200 {array} db.Cycle
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/cycles [get]
 // @Security BearerAuth
 func (h *Handler) GetCycles(w http.ResponseWriter, r *http.Request) {
-	userID, err := h.getInternalUserID(r)
-	if err != nil {
-		sendError(w, "AUTH_ERROR", "Invalid user", http.StatusUnauthorized)
-		return
-	}
-
-	cursor, err := parseCursor(r)
-	if err != nil {
-		sendError(w, "INVALID_CURSOR", "Invalid cursor format", http.StatusBadRequest)
-		return
-	}
-
-	cycles, err := h.db.GetCycles(r.Context(), db.GetCyclesParams{
-		UserID:    userID,
-		StartTime: cursor,
-		Limit:     50,
+	handleList(h, w, r, "cycles", func(ctx context.Context, userID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]db.Cycle, error) {
+		return h.db.GetCycles(ctx, db.GetCyclesParams{
+			UserID:    userID,
+			StartTime: cursor,
+			Limit:     limit,
+		})
 	})
-	if err != nil {
-		h.logger.Error("Failed to query cycles", "error", err)
-		sendError(w, "DB_ERROR", "Failed to fetch data", http.StatusInternalServerError)
-		return
-	}
-
-	if cycles == nil {
-		cycles = []db.Cycle{}
-	}
-	sendJSON(w, cycles)
 }
 
 // @Summary Get sleeps
@@ -167,39 +217,20 @@ func (h *Handler) GetCycles(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Param cursor query string false "Cursor timestamp (RFC3339)"
+// @Param limit query int false "Number of records (default 50, max 200)"
 // @Success 200 {array} db.Sleep
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/sleeps [get]
 // @Security BearerAuth
 func (h *Handler) GetSleeps(w http.ResponseWriter, r *http.Request) {
-	userID, err := h.getInternalUserID(r)
-	if err != nil {
-		sendError(w, "AUTH_ERROR", "Invalid user", http.StatusUnauthorized)
-		return
-	}
-
-	cursor, err := parseCursor(r)
-	if err != nil {
-		sendError(w, "INVALID_CURSOR", "Invalid cursor format", http.StatusBadRequest)
-		return
-	}
-
-	sleeps, err := h.db.GetSleeps(r.Context(), db.GetSleepsParams{
-		UserID:    userID,
-		StartTime: cursor,
-		Limit:     50,
+	handleList(h, w, r, "sleeps", func(ctx context.Context, userID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]db.Sleep, error) {
+		return h.db.GetSleeps(ctx, db.GetSleepsParams{
+			UserID:    userID,
+			StartTime: cursor,
+			Limit:     limit,
+		})
 	})
-	if err != nil {
-		h.logger.Error("Failed to query sleeps", "error", err)
-		sendError(w, "DB_ERROR", "Failed to fetch data", http.StatusInternalServerError)
-		return
-	}
-
-	if sleeps == nil {
-		sleeps = []db.Sleep{}
-	}
-	sendJSON(w, sleeps)
 }
 
 // @Summary Get workouts
@@ -208,39 +239,42 @@ func (h *Handler) GetSleeps(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Param cursor query string false "Cursor timestamp (RFC3339)"
+// @Param limit query int false "Number of records (default 50, max 200)"
 // @Success 200 {array} db.Workout
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/workouts [get]
 // @Security BearerAuth
 func (h *Handler) GetWorkouts(w http.ResponseWriter, r *http.Request) {
-	userID, err := h.getInternalUserID(r)
-	if err != nil {
-		sendError(w, "AUTH_ERROR", "Invalid user", http.StatusUnauthorized)
-		return
-	}
-
-	cursor, err := parseCursor(r)
-	if err != nil {
-		sendError(w, "INVALID_CURSOR", "Invalid cursor format", http.StatusBadRequest)
-		return
-	}
-
-	workouts, err := h.db.GetWorkouts(r.Context(), db.GetWorkoutsParams{
-		UserID:    userID,
-		StartTime: cursor,
-		Limit:     50,
+	handleList(h, w, r, "workouts", func(ctx context.Context, userID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]db.Workout, error) {
+		return h.db.GetWorkouts(ctx, db.GetWorkoutsParams{
+			UserID:    userID,
+			StartTime: cursor,
+			Limit:     limit,
+		})
 	})
-	if err != nil {
-		h.logger.Error("Failed to query workouts", "error", err)
-		sendError(w, "DB_ERROR", "Failed to fetch data", http.StatusInternalServerError)
-		return
-	}
+}
 
-	if workouts == nil {
-		workouts = []db.Workout{}
-	}
-	sendJSON(w, workouts)
+// @Summary Get recoveries
+// @Description Fetches recoveries using cursor-based pagination
+// @Tags recoveries
+// @Accept json
+// @Produce json
+// @Param cursor query string false "Cursor timestamp (RFC3339)"
+// @Param limit query int false "Number of records (default 50, max 200)"
+// @Success 200 {array} db.Recovery
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/recoveries [get]
+// @Security BearerAuth
+func (h *Handler) GetRecoveries(w http.ResponseWriter, r *http.Request) {
+	handleList(h, w, r, "recoveries", func(ctx context.Context, userID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]db.Recovery, error) {
+		return h.db.GetRecoveries(ctx, db.GetRecoveriesParams{
+			UserID:    userID,
+			StartTime: cursor,
+			Limit:     limit,
+		})
+	})
 }
 
 // @Summary Get insights
@@ -253,13 +287,11 @@ func (h *Handler) GetWorkouts(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/insights [get]
 // @Security BearerAuth
 func (h *Handler) GetInsights(w http.ResponseWriter, r *http.Request) {
-	userID, err := h.getInternalUserID(r)
-	if err != nil {
-		sendError(w, "AUTH_ERROR", "Invalid user", http.StatusUnauthorized)
+	userID, ok := h.validateUserID(w, r)
+	if !ok {
 		return
 	}
 
-	// Insights for last 30 days
 	since := time.Now().AddDate(0, 0, -30)
 
 	strain, err := h.db.GetDailyStrain(r.Context(), db.GetDailyStrainParams{
@@ -282,15 +314,14 @@ func (h *Handler) GetInsights(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := map[string]interface{}{
+	sendJSON(w, map[string]interface{}{
 		"strain":   strain,
 		"recovery": recovery,
-	}
-	sendJSON(w, res)
+	})
 }
 
 // @Summary Trigger ad-hoc sync
-// @Description Enqueues a sync job for the user
+// @Description Enqueues a background sync job for the authenticated user
 // @Tags sync
 // @Accept json
 // @Produce json
@@ -304,10 +335,9 @@ func (h *Handler) PostSync(w http.ResponseWriter, r *http.Request) {
 
 	h.syncMutex.Lock()
 
-	// Rate limiting: 1/user/5mins
+	// Per-user rate limit: 1 sync every 5 minutes
 	limiter, exists := h.syncLimiters[whoopUserID]
 	if !exists {
-		// allow 1 request every 5 minutes with a burst of 1
 		limiter = rate.NewLimiter(rate.Every(5*time.Minute), 1)
 		h.syncLimiters[whoopUserID] = limiter
 	}
@@ -318,7 +348,7 @@ func (h *Handler) PostSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Concurrency control: in-memory lock
+	// In-memory concurrency lock per user
 	if h.activeSyncs[whoopUserID] {
 		h.syncMutex.Unlock()
 		sendError(w, "CONFLICT", "A sync is already in progress", http.StatusConflict)
@@ -328,7 +358,6 @@ func (h *Handler) PostSync(w http.ResponseWriter, r *http.Request) {
 	h.activeSyncs[whoopUserID] = true
 	h.syncMutex.Unlock()
 
-	// Enqueue background worker process for this user. We will use the poller component as a one-off run for simplicity here.
 	go func() {
 		defer func() {
 			h.syncMutex.Lock()
@@ -336,7 +365,6 @@ func (h *Handler) PostSync(w http.ResponseWriter, r *http.Request) {
 			h.syncMutex.Unlock()
 		}()
 
-		// Run ad-hoc syncs
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 
@@ -346,5 +374,5 @@ func (h *Handler) PostSync(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	w.WriteHeader(http.StatusAccepted)
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted", "message": "Sync job enqueued"})
+	sendJSON(w, map[string]string{"status": "accepted", "message": "Sync job enqueued"})
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/arvind/whoop-stats/internal/config"
@@ -32,9 +33,14 @@ func NewServer(cfg *config.Config, handler *Handler, logger *slog.Logger) *chi.M
 	r.Use(chimiddleware.Recoverer)
 	r.Use(middleware.Logger(logger))
 
-	// CORS locked to frontend origin (or wildcard for dev)
+	allowedOrigins := strings.Split(cfg.CorsAllowedOrigins, ",")
+	for i := range allowedOrigins {
+		allowedOrigins[i] = strings.TrimSpace(allowedOrigins[i])
+	}
+
+	// CORS locked to frontend origin
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"https://*", "http://localhost:*"},
+		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
@@ -69,6 +75,7 @@ func NewServer(cfg *config.Config, handler *Handler, logger *slog.Logger) *chi.M
 		r.Get("/cycles", handler.GetCycles)
 		r.Get("/sleeps", handler.GetSleeps)
 		r.Get("/workouts", handler.GetWorkouts)
+		r.Get("/recoveries", handler.GetRecoveries)
 		r.Get("/insights", handler.GetInsights)
 
 		r.Post("/sync", handler.PostSync)

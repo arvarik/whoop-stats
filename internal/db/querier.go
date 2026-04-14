@@ -11,20 +11,55 @@ import (
 )
 
 type Querier interface {
+	// ---------------------------------------------------------------------------
+	// Webhook Events
+	// ---------------------------------------------------------------------------
 	CreateWebhookEvent(ctx context.Context, arg CreateWebhookEventParams) (WebhookEvent, error)
 	GetCycles(ctx context.Context, arg GetCyclesParams) ([]Cycle, error)
 	GetDailyRecovery(ctx context.Context, arg GetDailyRecoveryParams) ([]DailyRecovery, error)
+	GetDailySleep(ctx context.Context, arg GetDailySleepParams) ([]DailySleep, error)
+	// ---------------------------------------------------------------------------
+	// Continuous Aggregate Queries (dashboard insights)
+	// ---------------------------------------------------------------------------
 	GetDailyStrain(ctx context.Context, arg GetDailyStrainParams) ([]DailyStrain, error)
 	GetPendingWebhookEvents(ctx context.Context, limit int32) ([]WebhookEvent, error)
+	GetRecoveries(ctx context.Context, arg GetRecoveriesParams) ([]Recovery, error)
 	GetSleeps(ctx context.Context, arg GetSleepsParams) ([]Sleep, error)
 	GetUser(ctx context.Context, id pgtype.UUID) (User, error)
 	GetUserByWhoopID(ctx context.Context, whoopUserID string) (User, error)
 	GetWorkouts(ctx context.Context, arg GetWorkoutsParams) ([]Workout, error)
 	UpdateWebhookEventStatus(ctx context.Context, arg UpdateWebhookEventStatusParams) error
+	UpdateWebhookEventStatuses(ctx context.Context, arg UpdateWebhookEventStatusesParams) error
+	UpsertBodyMeasurement(ctx context.Context, arg UpsertBodyMeasurementParams) error
+	// ---------------------------------------------------------------------------
+	// Cycles (daily physiological cycles with strain)
+	// ---------------------------------------------------------------------------
 	UpsertCycle(ctx context.Context, arg UpsertCycleParams) error
+	// ---------------------------------------------------------------------------
+	// Recoveries (daily recovery with HRV, RHR, SpO2, skin temp)
+	// ---------------------------------------------------------------------------
 	UpsertRecovery(ctx context.Context, arg UpsertRecoveryParams) error
+	// ---------------------------------------------------------------------------
+	// Sleeps (sessions with stage breakdowns and sleep need)
+	// ---------------------------------------------------------------------------
 	UpsertSleep(ctx context.Context, arg UpsertSleepParams) error
+	// =============================================================================
+	// WHOOP Stats — SQL Queries (sqlc)
+	// =============================================================================
+	// These queries are compiled by sqlc into type-safe Go code.
+	// See sqlc.yaml for configuration.
+	// =============================================================================
+	// ---------------------------------------------------------------------------
+	// Users & Authentication
+	// ---------------------------------------------------------------------------
 	UpsertUser(ctx context.Context, arg UpsertUserParams) (User, error)
+	// ---------------------------------------------------------------------------
+	// User Profile & Body Measurements
+	// ---------------------------------------------------------------------------
+	UpsertUserProfile(ctx context.Context, arg UpsertUserProfileParams) error
+	// ---------------------------------------------------------------------------
+	// Workouts (sessions with HR zones, GPS data, sport classification)
+	// ---------------------------------------------------------------------------
 	UpsertWorkout(ctx context.Context, arg UpsertWorkoutParams) error
 }
 

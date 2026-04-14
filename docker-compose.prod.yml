@@ -1,10 +1,11 @@
 services:
   timescaledb:
     image: timescale/timescaledb:latest-pg15
+    container_name: whoop-stats-db
     environment:
       POSTGRES_DB: whoop_stats
       POSTGRES_USER: ${POSTGRES_USER:-whoop_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secretpassword}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - timescaledb-data:/var/lib/postgresql/data
     networks:
@@ -14,40 +15,66 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
 
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
+    container_name: whoop-stats-backend
     ports:
-      - "8080:8080"
+      - "8082:8080"
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-whoop_user}:${POSTGRES_PASSWORD:-secretpassword}@timescaledb:5432/whoop_stats?sslmode=disable
-      SERVER_PORT: "8080"
+      WHOOP_STATS_DATABASE_URL: postgres://${POSTGRES_USER:-whoop_user}:${POSTGRES_PASSWORD}@timescaledb:5432/whoop_stats?sslmode=disable
+      WHOOP_STATS_SERVER_PORT: "8080"
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       WHOOP_CLIENT_ID: ${WHOOP_CLIENT_ID}
       WHOOP_CLIENT_SECRET: ${WHOOP_CLIENT_SECRET}
       WHOOP_WEBHOOK_SECRET: ${WHOOP_WEBHOOK_SECRET}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3032}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      POLL_INTERVAL_CYCLE: ${POLL_INTERVAL_CYCLE:-4h}
+      POLL_INTERVAL_WORKOUT: ${POLL_INTERVAL_WORKOUT:-30m}
+      POLL_INTERVAL_SLEEP: ${POLL_INTERVAL_SLEEP:-1h}
+      POLL_INTERVAL_SLEEP_OFFPEAK: ${POLL_INTERVAL_SLEEP_OFFPEAK:-4h}
+      POLL_INTERVAL_PROFILE: ${POLL_INTERVAL_PROFILE:-24h}
+    volumes:
+      - ./.whoop_token.json:/app/.whoop_token.json:ro
+    tmpfs:
+      - /tmp
+      - /var/log
     depends_on:
       timescaledb:
         condition: service_healthy
     networks:
       - whoop_network
-    command: ["./whoop-stats", "-mode", "webhook"]
+    command: ["./whoop-stats", "-mode", "poll"] # Default to poll for production/NAS
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
 
   frontend:
     build:
       context: ./web
-      dockerfile: Dockerfile
+      dockerfile: ../Dockerfile.frontend
+    container_name: whoop-stats-frontend
     ports:
-      - "3000:3000"
+      - "3032:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://backend:8080
+      NEXT_PUBLIC_API_URL: http://localhost:8082 # Needs to be accessible by browser
       WHOOP_STATS_TOKEN: ${WHOOP_STATS_TOKEN}
     depends_on:
       - backend
     networks:
       - whoop_network
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
 
 networks:
   whoop_network:

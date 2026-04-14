@@ -352,6 +352,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/recoveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get recoveries
+         * @description Fetches recoveries using cursor-based pagination
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Cursor timestamp (RFC3339) */
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["github_com_arvind_whoop-stats_internal_db.Recovery"][];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_api.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_api.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -421,6 +481,22 @@ export interface components {
                 code?: string;
                 message?: string;
             };
+        };
+        "github_com_arvind_whoop-stats_internal_db.Recovery": {
+            id?: number;
+            user_id?: string;
+            start_time?: string;
+            timezone_offset?: string;
+            recovery_score?: number;
+            resting_heart_rate?: number;
+            hrv_rmssd_milli?: number;
+            spo2_percentage?: number;
+            skin_temp_celsius?: number;
+            sleep_id?: number;
+            score_state?: string;
+            user_calibrating?: boolean;
+            created_at?: string;
+            updated_at?: string;
         };
     };
     responses: never;
