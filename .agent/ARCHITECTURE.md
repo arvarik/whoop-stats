@@ -2,6 +2,12 @@
 
 _This document is the definitive source of truth for system design, data models, API contracts, and technology boundaries. Every claim here has been verified against the actual source code. Update this document during the Design and Review phases._
 
+## 0. Project Topology
+
+**Topology:** `[frontend, backend]`
+
+_Agents: Read the corresponding Gemstack topology profiles (`frontend.md` and `backend.md`) from `~/.gemini/antigravity/global_workflows/` before proceeding with any workflow step. These profiles enforce component state coverage, state management discipline, data integrity testing, and anti-mocking rules._
+
 ## 1. Tech Stack & Infrastructure
 
 | Layer | Technology | Version / Notes |

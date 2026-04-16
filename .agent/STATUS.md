@@ -97,3 +97,20 @@ Hardening `.agent/` documentation suite for accuracy and comprehensiveness.
 - `.agent/TESTING.md` — Test commands, CI pipeline, evidence rules
 - `.agent/PHILOSOPHY.md` — Product beliefs, target user, UX principles, SSD protection
 - `GEMINI.md` — AI system rules (root level)
+
+---
+
+## Stub Audit Tracker
+
+_Track mock/stub status across the frontend. Populated during Build phase, cleared during Ship._
+
+| Stub Location | Type | Real API Endpoint | Status |
+|---------------|------|-------------------|--------|
+
+_No active stubs detected. Populate during the next Build phase._
+
+---
+
+## Prompt Versioning Changelog
+
+N/A — No LLM prompts in this project.
