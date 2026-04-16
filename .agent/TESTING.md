@@ -177,6 +177,63 @@ Runs on pushes to `main` and version tags (`v*`). Publishes Docker images:
 | Frontend ESLint clean | UNTESTED | `cd web && npm run lint` |
 | Frontend TypeScript build | UNTESTED | `cd web && npm run build` |
 
+---
+
+## Backend Route Coverage Matrix
+
+_Populated by the SDET during the Trap phase. One row per API endpoint. All cells must show PASS with execution evidence or FAIL with reproduction steps._
+
+| Endpoint | Method | 200 OK | 400 Bad Req | 401/403 Auth | 404 Not Found | Idempotent | Edge Cases |
+|----------|--------|--------|-------------|--------------|---------------|------------|------------|
+| `/healthz` | GET | | | N/A | | | DB unreachable → 503 |
+| `/swagger/*` | GET | | | N/A | | | |
+| `/api/v1/user/profile` | GET | | | | | | SDK API failure |
+| `/api/v1/cycles` | GET | | | | | | Invalid cursor, limit > 200, no data |
+| `/api/v1/sleeps` | GET | | | | | | Invalid cursor, limit > 200, no data |
+| `/api/v1/workouts` | GET | | | | | | Invalid cursor, limit > 200, no data |
+| `/api/v1/recoveries` | GET | | | | | | Invalid cursor, limit > 200, no data |
+| `/api/v1/insights` | GET | | | | | | No aggregate data |
+| `/api/v1/sync` | POST | | | | | 409 concurrent, 429 rate limit | 10-min timeout |
+| `/webhook` | POST | | | N/A (HMAC) | | | Invalid HMAC, unknown event type |
+
+---
+
+## Frontend Component State Matrix
+
+_Populated by the SDET during the Trap phase. Every interactive component must be tested across all visual states._
+
+| Component | Empty | Loading | Success | Error | Partial |
+|-----------|-------|---------|---------|-------|---------|
+| Overview Dashboard (`page.tsx`) | | | | | |
+| Recovery Page (`recovery/page.tsx`) | | | | | |
+| Sleep Page (`sleep/page.tsx`) | | | | | |
+| Strain Page (`strain/page.tsx`) | | | | | |
+| Workouts Page (`workouts/page.tsx`) | | | | | |
+| SyncButton | | | | | |
+| MetricCard | | | | | |
+| StrainRecoveryChart | | | | | |
+| TrendChart | | | | | |
+| RecoveryGauge | | | | | |
+| RecoveryPanels | | | | | |
+| SleepPanels | | | | | |
+| SleepStagesBar | | | | | |
+| StrainPanels | | | | | |
+| WorkoutCard | | | | | |
+| WorkoutDetail | | | | | |
+| WorkoutFeed | | | | | |
+| RecentWorkouts | | | | | |
+| DetailPopup | | | | | |
+| Sidebar | | | | | |
+| MobileNav | | | | | |
+| Global Error Boundary (`error.tsx`) | | | | | |
+| Skeleton Loading (`loading.tsx`) | | | | | |
+
+---
+
+## ML / AI Evaluation Thresholds
+
+N/A — ML/AI topology is not active for this project.
+
 ## Bugs Found (Fix Phase Queue)
 - (None)
 
