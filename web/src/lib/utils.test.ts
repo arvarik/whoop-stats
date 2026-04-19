@@ -9,7 +9,6 @@ test('cn utility', async (t) => {
 
   await t.test('handles conditional classes', () => {
     assert.strictEqual(cn('foo', true && 'bar', false && 'baz'), 'foo bar');
-    // @ts-ignore
     assert.strictEqual(cn('foo', null, undefined, 'bar'), 'foo bar');
   });
 
@@ -19,13 +18,11 @@ test('cn utility', async (t) => {
 
   await t.test('handles array inputs', () => {
     assert.strictEqual(cn(['foo', 'bar']), 'foo bar');
-    // @ts-ignore
     assert.strictEqual(cn(['foo', ['bar', 'baz']]), 'foo bar baz');
   });
 
   await t.test('merges tailwind classes correctly', () => {
-    // Note: In the local test environment with mock tailwind-merge,
-    // it handles basic conflict resolution where the last class for a property wins.
+    // Note: This relies on tailwind-merge being present in the environment
     assert.strictEqual(cn('px-2 py-2', 'p-4'), 'p-4');
     assert.strictEqual(cn('text-red-500', 'text-blue-500'), 'text-blue-500');
   });
