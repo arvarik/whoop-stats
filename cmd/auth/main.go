@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,28 +23,27 @@ type tokenData struct {
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil)))
+
 	clientID := os.Getenv("WHOOP_CLIENT_ID")
 	clientSecret := os.Getenv("WHOOP_CLIENT_SECRET")
 
 	if clientID == "" || clientSecret == "" {
-		fmt.Println("Error: WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET environment variables are required.")
-		fmt.Println("\nUsage:")
-		fmt.Println("  export WHOOP_CLIENT_ID=your_id")
-		fmt.Println("  export WHOOP_CLIENT_SECRET=your_secret")
-		fmt.Println("  go run cmd/auth/main.go")
+		slog.Error("WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET environment variables are required")
+		slog.Info("Usage:\n  export WHOOP_CLIENT_ID=your_id\n  export WHOOP_CLIENT_SECRET=your_secret\n  go run cmd/auth/main.go")
 		os.Exit(1)
 	}
 
 	// Try to load and refresh an existing token first.
 	if tok, err := loadToken(); err == nil && tok.RefreshToken != "" {
-		fmt.Println("Found existing token session. Attempting refresh...")
+		slog.Info("Found existing token session. Attempting refresh...")
 		newTok, err := refreshToken(clientID, clientSecret, tok.RefreshToken)
 		if err == nil {
 			saveToken(newTok)
 			printToken(newTok)
 			return
 		}
-		fmt.Printf("Refresh failed (%v), starting new authorization flow...\n\n", err)
+		slog.Warn("Refresh failed, starting new authorization flow", "error", err)
 	}
 
 	// No valid session — run the full OAuth authorization code flow.
@@ -59,7 +58,8 @@ func runAuthFlow(clientID, clientSecret string) {
 
 	u, err := url.Parse(redirectURI)
 	if err != nil {
-		log.Fatalf("Error parsing WHOOP_REDIRECT_URI: %v", err)
+		slog.Error("Error parsing WHOOP_REDIRECT_URI", "error", err)
+		os.Exit(1)
 	}
 
 	port := u.Port()
@@ -86,12 +86,10 @@ func runAuthFlow(clientID, clientSecret string) {
 		url.QueryEscape(strings.Join(scopes, " ")),
 	)
 
-	fmt.Println("=== WHOOP OAuth 2.0 Token Generator ===")
-	fmt.Println("\n1. IMPORTANT: Ensure you have added the following Redirect URI to your WHOOP App settings in the Developer Dashboard:")
-	fmt.Printf("   %s\n", redirectURI)
-	fmt.Println("\n2. Open this URL in your browser to authorize:")
-	fmt.Printf("\n   %s\n\n", authURL)
-	fmt.Printf("Waiting for authorization callback on port %s...\n", port)
+	slog.Info("=== WHOOP OAuth 2.0 Token Generator ===")
+	slog.Info("IMPORTANT: Ensure you have added the following Redirect URI to your WHOOP App settings in the Developer Dashboard", "redirect_uri", redirectURI)
+	slog.Info("Open this URL in your browser to authorize", "auth_url", authURL)
+	slog.Info("Waiting for authorization callback", "port", port)
 
 	server := &http.Server{Addr: ":" + port}
 
@@ -100,13 +98,13 @@ func runAuthFlow(clientID, clientSecret string) {
 		if errParam := r.URL.Query().Get("error"); errParam != "" {
 			desc := r.URL.Query().Get("error_description")
 			hint := r.URL.Query().Get("error_hint")
+			slog.Error("OAuth error", "error", errParam, "description", desc, "hint", hint)
 			msg := fmt.Sprintf("OAuth error: %s\nDescription: %s\nHint: %s", errParam, desc, hint)
-			fmt.Fprintf(os.Stderr, "\n=== OAUTH ERROR ===\n%s\n", msg)
 			http.Error(w, msg, http.StatusBadRequest)
 			go func() {
 				time.Sleep(1 * time.Second)
 				if err := server.Shutdown(context.Background()); err != nil {
-					log.Printf("Server shutdown error: %v", err)
+					slog.Error("Server shutdown error", "error", err)
 				}
 			}()
 			return
@@ -118,7 +116,7 @@ func runAuthFlow(clientID, clientSecret string) {
 			return
 		}
 
-		fmt.Println("Received auth code! Exchanging for access token...")
+		slog.Info("Received auth code! Exchanging for access token...")
 
 		data := url.Values{}
 		data.Set("grant_type", "authorization_code")
@@ -141,13 +139,14 @@ func runAuthFlow(clientID, clientSecret string) {
 		go func() {
 			time.Sleep(1 * time.Second)
 			if err := server.Shutdown(context.Background()); err != nil {
-				log.Printf("Server shutdown error: %v", err)
+				slog.Error("Server shutdown error", "error", err)
 			}
 		}()
 	})
 
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {
-		log.Fatalf("Server error: %v", err)
+		slog.Error("Server error", "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -204,19 +203,19 @@ func loadToken() (*tokenData, error) {
 func saveToken(tok *tokenData) {
 	data, err := json.MarshalIndent(tok, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not save token: %v\n", err)
+		slog.Warn("Could not save token", "error", err)
 		return
 	}
 	if err := os.WriteFile(tokenFile, data, 0600); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tokenFile, err)
+		slog.Warn("Could not write token file", "file", tokenFile, "error", err)
 	}
 }
 
 func printToken(tok *tokenData) {
-	fmt.Println("\n=== SUCCESS ===")
-	fmt.Println("\nToken generated successfully.")
+	slog.Info("=== SUCCESS ===")
+	slog.Info("Token generated successfully")
 	if tok.RefreshToken != "" {
-		fmt.Printf("\nInitial tokens saved to %s.\n", tokenFile)
-		fmt.Println("Upload this file to your NAS / Production server root.")
+		slog.Info("Initial tokens saved", "file", tokenFile)
+		slog.Info("Upload this file to your NAS / Production server root")
 	}
 }
