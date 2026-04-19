@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { WorkoutCard } from "@/components/workout-card";
 import { WorkoutDetail } from "@/components/workout-detail";
 import { Dumbbell, SlidersHorizontal, X, Flame, Clock, ChevronUp, ChevronDown, Timer } from "lucide-react";
-import { formatCalories, formatDuration, kjToCal } from "@/lib/format";
+import { formatDuration, kjToCal } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

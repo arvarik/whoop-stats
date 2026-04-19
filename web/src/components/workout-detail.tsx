@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { X, Flame, Clock, Heart, Zap } from "lucide-react";
 import { formatDuration, formatCalories, HR_ZONE_COLORS, HR_ZONE_LABELS } from "@/lib/format";
 import { cn } from "@/lib/utils";
