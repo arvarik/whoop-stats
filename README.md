@@ -3,7 +3,7 @@
 A premium, high-performance, open-source dashboard and ingestion engine for your WHOOP fitness data. Built for homelabs, NAS devices, and cloud deployments.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Go Version](https://img.shields.io/badge/go-1.22+-00ADD8.svg)
+![Go Version](https://img.shields.io/badge/go-1.25+-00ADD8.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16+-black.svg)
 ![TimescaleDB](https://img.shields.io/badge/TimescaleDB-15+-FDB515.svg)
 
@@ -40,79 +40,98 @@ For public-facing cloud instances. WHOOP pushes events in real-time. We use a st
 
 ## Getting Started
 
-### 1. Prerequisites
+### Quick Start (Recommended)
 
-| Requirement | Version | Notes |
-|-------------|---------|-------|
-| Docker + Docker Compose | v2+ | Required for all deployments |
-| Go | 1.22+ | One-time use for the auth script |
-| WHOOP Developer Account | — | [Register here](https://developer.whoop.com) |
-
-### 2. Clone and Configure
+The setup wizard handles everything — secret generation, WHOOP API credentials, OAuth tokens, and user ID detection:
 
 ```bash
 git clone https://github.com/arvarik/whoop-stats.git
 cd whoop-stats
+./setup.sh
+```
+
+The wizard will:
+1. ✅ Create `.env` from the template
+2. ✅ Auto-generate `ENCRYPTION_KEY` and `POSTGRES_PASSWORD`
+3. ✅ Ask for your WHOOP Client ID and Secret (from [developer.whoop.com](https://developer.whoop.com))
+4. ✅ Run the OAuth flow and detect your WHOOP User ID automatically
+5. ✅ Validate everything is ready
+
+Then deploy:
+
+```bash
+# Homelab / NAS (recommended)
+docker compose up -d --build
+
+# Production (named volumes, networks)
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Dashboard: `http://your-server:3032` · API: `http://your-server:8085`
+
+### Prerequisites
+
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| Docker + Docker Compose | v2+ | Required for all deployments |
+| Go | 1.25+ | One-time use for the OAuth token generation |
+| WHOOP Developer Account | — | [Register here](https://developer.whoop.com) |
+
+> **Deploying to a remote server?** Run `./setup.sh` locally (needs Go + browser), then copy `.env` and `.whoop_token.json` to your server.
+
+<details>
+<summary><strong>Manual Setup (without setup.sh)</strong></summary>
+
+#### 1. Configure Environment
+
+```bash
 cp .env.example .env
 ```
 
-Edit `.env` and fill in the **required** values:
+Fill in `.env`:
 
 ```env
-# [REQUIRED] Database password (change from default)
-POSTGRES_PASSWORD=your_secure_password
-
-# [REQUIRED] AES-256 encryption key (exactly 32 chars)
 # Generate: openssl rand -hex 16
-ENCRYPTION_KEY=
+ENCRYPTION_KEY=your_32_char_key_here
 
-# [REQUIRED] From https://developer.whoop.com
-WHOOP_CLIENT_ID=
-WHOOP_CLIENT_SECRET=
+# From https://developer.whoop.com
+WHOOP_CLIENT_ID=your_client_id
+WHOOP_CLIENT_SECRET=your_client_secret
 
-# [REQUIRED] Your WHOOP user ID
-WHOOP_USER_ID=
+# Database password
+POSTGRES_PASSWORD=your_secure_password
 ```
 
-### 3. First-Time Authentication
+#### 2. First-Time Authentication
 
-Since this app can run without a public URL, we use a one-time local script to generate your OAuth tokens:
-
-1. **Configure Redirect URI:** In your [WHOOP Developer Dashboard](https://developer.whoop.com), add `http://localhost:8081/callback` to your App's Redirect URIs.
-
-2. **Generate Token:**
+1. Add `http://localhost:8081/callback` to your WHOOP App's Redirect URIs in the [Developer Dashboard](https://developer.whoop.com).
+2. Generate tokens:
    ```bash
    export WHOOP_CLIENT_ID=your_id
    export WHOOP_CLIENT_SECRET=your_secret
    go run cmd/auth/main.go
    ```
+3. Complete the authorization in your browser. Your WHOOP User ID will be auto-detected and saved to `.env`.
+4. If deploying remotely, copy `.whoop_token.json` to the server.
 
-3. **Authorize:** Open the URL printed in your terminal, log in to WHOOP, and authorize the app.
-
-4. **Save:** The script generates `.whoop_token.json` with restricted permissions (`0600`).
-
-5. **Deploy:** If deploying to a NAS or remote server, upload `.whoop_token.json` to the project root on that server.
-
-### 4. Deploy
-
-#### Option A: Homelab / NAS (Polling Mode)
-
-Database migrations run automatically on first startup.
+#### 3. Deploy
 
 ```bash
 docker compose up -d --build
 ```
 
-The dashboard will be available at `http://your-server:3032` and the API at `http://your-server:8085`.
+</details>
 
-#### Option B: Cloud (Webhook Mode)
+---
+
+### Webhook Mode (Cloud)
 
 1. Ensure your server is accessible via HTTPS.
 2. Configure your WHOOP Webhook URL: `https://your-domain.com/webhook`.
 3. Set `WHOOP_WEBHOOK_SECRET` in `.env`.
 4. Start:
    ```bash
-   docker-compose -f docker-compose.prod.yml up -d --build
+   docker compose -f docker-compose.prod.yml up -d --build
    ```
 
 ---
@@ -293,7 +312,7 @@ Watchtower works seamlessly — it only replaces container images, not volumes. 
 | Layer | Technology | Role |
 |-------|-----------|------|
 | **Database** | PostgreSQL 15 + TimescaleDB | Time-series storage with hypertables and continuous aggregates |
-| **Backend** | Go 1.22+, go-chi, sqlc | REST API, dual-mode ingestion, type-safe DB queries |
+| **Backend** | Go 1.25+, go-chi, sqlc | REST API, dual-mode ingestion, type-safe DB queries |
 | **Frontend** | Next.js 16, React 19, Tailwind CSS v4 | Server-rendered dashboard with glassmorphism UI |
 | **Charts** | Recharts, Framer Motion | Interactive data visualization and animations |
 | **Auth** | JWT (HS256), AES-256-GCM | API authentication and token encryption |
@@ -325,9 +344,10 @@ whoop-stats/
 │       ├── app/       # Pages (overview, recovery, sleep, strain, workouts)
 │       ├── components/# UI components
 │       └── lib/       # API client, utilities, formatting helpers
-├── docker-compose.yml # Development / homelab deployment
-├── design.md          # Architecture and design decisions
-└── .env.example       # Configuration template
+├── docker-compose.yml      # Development / homelab deployment
+├── docker-compose.prod.yml # Production deployment (named volumes)
+├── setup.sh               # Interactive setup wizard
+└── .env.example           # Configuration template
 ```
 
 ---

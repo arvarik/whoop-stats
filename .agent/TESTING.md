@@ -5,13 +5,21 @@ _This file tracks test methods, scenarios, and results with concrete execution e
 ## 0. Prerequisites & Setup
 
 ### Required Tools
-- Go 1.25.0+ (Note: CI currently uses Go 1.22 — see Known Issues in STATUS.md)
+- Go 1.25.0+ (aligned with `go.mod` and CI)
 - Node.js 20+ with npm
 - Docker (required for `testcontainers-go` integration tests and TimescaleDB)
 - `sqlc` v1.30.0+ (for code generation verification)
 - `golangci-lint` (optional, not in CI)
 
 ### Start the Full Stack
+
+**Quick Start (recommended):**
+```bash
+./setup.sh                    # Interactive wizard — generates .env, secrets, OAuth tokens
+docker compose up -d --build  # Start all services
+```
+
+**Manual Start:**
 ```bash
 # Database (TimescaleDB + auto-runs init migration via docker-entrypoint-initdb.d)
 docker compose up -d timescaledb
@@ -129,7 +137,7 @@ docker run --rm whoop-stats-frontend whoami  # should print "nextjs"
 ### CI Workflow (`.github/workflows/ci.yml`)
 Runs on pushes and PRs to `main`. Two jobs:
 
-**Backend Job** (Go 1.22, ubuntu-latest):
+**Backend Job** (Go 1.25, ubuntu-latest):
 1. `go build -v ./cmd/... ./internal/...`
 2. `go vet ./cmd/... ./internal/...`
 3. Unit tests with race detector:
@@ -142,7 +150,7 @@ Runs on pushes and PRs to `main`. Two jobs:
 2. `npm run lint`
 3. `npm run build` (with `NEXT_TELEMETRY_DISABLED=1`)
 
-> **Known Issue:** CI uses Go 1.22 but `go.mod` specifies 1.25.0. These should be aligned.
+> CI Go version is aligned with `go.mod` at 1.25.
 
 ### Publish Workflow (`.github/workflows/publish.yml`)
 Runs on pushes to `main` and version tags (`v*`). Publishes Docker images:
@@ -166,16 +174,7 @@ Runs on pushes to `main` and version tags (`v*`). Publishes Docker images:
 
 | Scenario | Status | Evidence |
 |----------|--------|----------|
-| AES-256-GCM encrypt/decrypt round-trip | UNTESTED | `go test -v ./internal/crypto/...` |
-| JWT HS256 validation + algorithm rejection | UNTESTED | `go test -v ./internal/middleware/...` |
-| Config validation (missing required vars) | UNTESTED | `go test -v ./internal/config/...` |
-| IP rate limiter enforcement | UNTESTED | `go test -v ./internal/middleware/...` |
-| Timezone offset parsing | UNTESTED | `go test -v ./internal/storage/ -run TestParse` |
-| Adaptive sleep polling (off-peak skip) | UNTESTED | `go test -v ./internal/poller/ -run TestPoller_Offpeak` |
-| Stats utility (avg, stddev, percentChange) | UNTESTED | `cd web && npm test` |
-| Chart component tests | UNTESTED | `cd web && npm test` |
-| Frontend ESLint clean | UNTESTED | `cd web && npm run lint` |
-| Frontend TypeScript build | UNTESTED | `cd web && npm run build` |
+| [description] | UNTESTED | |
 
 ---
 

@@ -1,18 +1,24 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
 
-const tokenFile = ".whoop_token.json"
+const (
+	tokenFile = ".whoop_token.json"
+	envFile   = ".env"
+)
 
 // tokenData represents the stored token session.
 type tokenData struct {
@@ -40,7 +46,7 @@ func main() {
 		newTok, err := refreshToken(clientID, clientSecret, tok.RefreshToken)
 		if err == nil {
 			saveToken(newTok)
-			printToken(newTok)
+			printSuccess(newTok)
 			return
 		}
 		slog.Warn("Refresh failed, starting new authorization flow", "error", err)
@@ -132,7 +138,7 @@ func runAuthFlow(clientID, clientSecret string) {
 		}
 
 		saveToken(tok)
-		printToken(tok)
+		printSuccess(tok)
 
 		_, _ = fmt.Fprintf(w, "Success! You can close this window and check your terminal.")
 
@@ -211,11 +217,120 @@ func saveToken(tok *tokenData) {
 	}
 }
 
-func printToken(tok *tokenData) {
-	slog.Info("=== SUCCESS ===")
-	slog.Info("Token generated successfully")
-	if tok.RefreshToken != "" {
-		slog.Info("Initial tokens saved", "file", tokenFile)
-		slog.Info("Upload this file to your NAS / Production server root")
+// whoopProfile represents the WHOOP user profile response.
+type whoopProfile struct {
+	UserID    int    `json:"user_id"`
+	Email     string `json:"email"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+}
+
+// fetchUserProfile calls the WHOOP API to get the authenticated user's profile.
+func fetchUserProfile(accessToken string) (*whoopProfile, error) {
+	req, err := http.NewRequest(http.MethodGet, "https://api.prod.whoop.com/developer/v1/user/profile/basic", nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating profile request: %w", err)
 	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching profile: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("profile API returned HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var profile whoopProfile
+	if err := json.NewDecoder(resp.Body).Decode(&profile); err != nil {
+		return nil, fmt.Errorf("decoding profile: %w", err)
+	}
+	return &profile, nil
+}
+
+// updateEnvVar reads .env, replaces a variable's value (or appends it), and writes back.
+// Only updates if the current value is empty or matches the default placeholder.
+func updateEnvVar(key, value string) bool {
+	data, err := os.ReadFile(envFile)
+	if err != nil {
+		return false // .env doesn't exist, nothing to update
+	}
+
+	lines := strings.Split(string(data), "\n")
+	found := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Skip comments and empty lines
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		parts := strings.SplitN(trimmed, "=", 2)
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) != key {
+			continue
+		}
+		currentVal := strings.TrimSpace(parts[1])
+		// Only update if blank or placeholder
+		if currentVal != "" && currentVal != "12345" {
+			return false // User already set a real value
+		}
+		lines[i] = key + "=" + value
+		found = true
+		break
+	}
+
+	if !found {
+		// Append the variable
+		lines = append(lines, key+"="+value)
+	}
+
+	if err := os.WriteFile(envFile, []byte(strings.Join(lines, "\n")), 0600); err != nil {
+		slog.Warn("Could not update .env", "error", err)
+		return false
+	}
+	return true
+}
+
+func printSuccess(tok *tokenData) {
+	slog.Info("=== SUCCESS ===")
+	slog.Info("Token generated successfully", "file", tokenFile)
+
+	// Fetch user profile to detect WHOOP User ID
+	profile, err := fetchUserProfile(tok.AccessToken)
+	if err != nil {
+		slog.Warn("Could not auto-detect WHOOP User ID (you can set it manually in .env)", "error", err)
+	} else {
+		userIDStr := strconv.Itoa(profile.UserID)
+		name := strings.TrimSpace(profile.FirstName + " " + profile.LastName)
+		if name == "" {
+			name = profile.Email
+		}
+		slog.Info("=== WHOOP User Detected ===",
+			"user_id", userIDStr,
+			"name", name,
+		)
+
+		if updateEnvVar("WHOOP_USER_ID", userIDStr) {
+			slog.Info("Auto-wrote WHOOP_USER_ID to .env", "value", userIDStr)
+		} else {
+			slog.Info("Set WHOOP_USER_ID in your .env file", "value", userIDStr)
+		}
+	}
+
+	if tok.RefreshToken != "" {
+		slog.Info("Upload .whoop_token.json to your NAS / Production server root")
+	}
+}
+
+// promptYesNo asks the user a yes/no question and returns true for yes.
+func promptYesNo(question string) bool {
+	fmt.Printf("%s [Y/n]: ", question)
+	scanner := bufio.NewScanner(os.Stdin)
+	if scanner.Scan() {
+		answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
+		return answer == "" || answer == "y" || answer == "yes"
+	}
+	return true
 }

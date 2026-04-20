@@ -8,6 +8,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - timescaledb-data:/var/lib/postgresql/data
+      - ./migrations/000001_init_schema.up.sql:/docker-entrypoint-initdb.d/000001_init_schema.sql:ro
+    shm_size: 256mb
     networks:
       - whoop_network
     healthcheck:
@@ -30,17 +32,17 @@ services:
     environment:
       WHOOP_STATS_DATABASE_URL: postgres://${POSTGRES_USER:-whoop_user}:${POSTGRES_PASSWORD}@timescaledb:5432/whoop_stats?sslmode=disable
       WHOOP_STATS_SERVER_PORT: "8080"
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      WHOOP_CLIENT_ID: ${WHOOP_CLIENT_ID}
-      WHOOP_CLIENT_SECRET: ${WHOOP_CLIENT_SECRET}
-      WHOOP_WEBHOOK_SECRET: ${WHOOP_WEBHOOK_SECRET}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3032}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      POLL_INTERVAL_CYCLE: ${POLL_INTERVAL_CYCLE:-4h}
-      POLL_INTERVAL_WORKOUT: ${POLL_INTERVAL_WORKOUT:-30m}
-      POLL_INTERVAL_SLEEP: ${POLL_INTERVAL_SLEEP:-1h}
-      POLL_INTERVAL_SLEEP_OFFPEAK: ${POLL_INTERVAL_SLEEP_OFFPEAK:-4h}
-      POLL_INTERVAL_PROFILE: ${POLL_INTERVAL_PROFILE:-24h}
+      WHOOP_STATS_ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required in .env}
+      WHOOP_STATS_WHOOP_CLIENT_ID: ${WHOOP_CLIENT_ID:?WHOOP_CLIENT_ID is required in .env}
+      WHOOP_STATS_WHOOP_CLIENT_SECRET: ${WHOOP_CLIENT_SECRET:?WHOOP_CLIENT_SECRET is required in .env}
+      WHOOP_STATS_WHOOP_WEBHOOK_SECRET: ${WHOOP_WEBHOOK_SECRET:-}
+      WHOOP_STATS_CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3032}
+      WHOOP_STATS_LOG_LEVEL: ${LOG_LEVEL:-info}
+      WHOOP_STATS_POLL_INTERVAL_CYCLE: ${POLL_INTERVAL_CYCLE:-4h}
+      WHOOP_STATS_POLL_INTERVAL_WORKOUT: ${POLL_INTERVAL_WORKOUT:-30m}
+      WHOOP_STATS_POLL_INTERVAL_SLEEP: ${POLL_INTERVAL_SLEEP:-1h}
+      WHOOP_STATS_POLL_INTERVAL_SLEEP_OFFPEAK: ${POLL_INTERVAL_SLEEP_OFFPEAK:-4h}
+      WHOOP_STATS_POLL_INTERVAL_PROFILE: ${POLL_INTERVAL_PROFILE:-24h}
     volumes:
       - ./.whoop_token.json:/app/.whoop_token.json:ro
     tmpfs:
@@ -51,7 +53,7 @@ services:
         condition: service_healthy
     networks:
       - whoop_network
-    command: ["./whoop-stats", "-mode", "poll"] # Default to poll for production/NAS
+    command: ["./whoop-stats", "-mode", "poll", "-user", "${WHOOP_USER_ID:?WHOOP_USER_ID is required in .env}"]
     logging:
       driver: "local"
       options:
@@ -60,13 +62,14 @@ services:
   frontend:
     build:
       context: ./web
-      dockerfile: ../Dockerfile.frontend
+      dockerfile: Dockerfile
     container_name: whoop-stats-frontend
     ports:
-      - "3032:3000"
+      - "${FRONTEND_PORT:-3032}:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8082 # Needs to be accessible by browser
-      WHOOP_STATS_TOKEN: ${WHOOP_STATS_TOKEN}
+      NEXT_PUBLIC_API_URL: http://backend:8080
+      WHOOP_STATS_ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      WHOOP_STATS_WHOOP_USER_ID: ${WHOOP_USER_ID}
     depends_on:
       - backend
     networks:
