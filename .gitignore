@@ -5,11 +5,19 @@
 
 # Binaries
 bin/
+auth
 whoop-stats
 
 # Go workspaces
 go.work
 go.work.sum
+
+# Go test/build artifacts
+*.out
+coverage.html
+
+# Database (dev compose bind mount)
+data/
 
 # Frontend
 web/.next/
@@ -27,3 +35,5 @@ web/.env.production.local
 *.swp
 .DS_Store
 
+# Logs
+*.log

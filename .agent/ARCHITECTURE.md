@@ -162,7 +162,7 @@ Error codes: `AUTH_ERROR`, `DB_ERROR`, `API_ERROR`, `CONFLICT`, `RATE_LIMIT_EXCE
 ## 5. Security Architecture
 
 ### Token Lifecycle
-1. **Bootstrap**: `cmd/auth/main.go` runs an OAuth2 Authorization Code flow via a local HTTP server (default port 8081). Saves tokens to `.whoop_token.json`. **Note:** this CLI uses `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` env vars (no `WHOOP_STATS_` prefix) and the standard `log` package.
+1. **Bootstrap**: `cmd/auth/main.go` runs an OAuth2 Authorization Code flow via a local HTTP server (default port 8081). Saves tokens to `.whoop_token.json`. After successful token exchange, the CLI **auto-detects** the user's WHOOP User ID by calling `GET /developer/v1/user/profile/basic` and writes it to `.env` if the file exists. **Note:** this CLI uses `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` env vars (no `WHOOP_STATS_` prefix) and the standard `log` package.
 2. **First Run**: `internal/auth/manager.go` reads `.whoop_token.json` as offline fallback when the user isn't found in the DB. It encrypts the tokens with AES-256-GCM and upserts into the `users` table.
 3. **Steady State**: On each API call, the auth manager loads encrypted tokens from DB, decrypts in-memory, refreshes via WHOOP token endpoint (`https://api.prod.whoop.com/oauth/oauth2/token`), re-encrypts and persists the new tokens.
 4. **Cache**: Authenticated `whoop.Client` instances are cached in a `sync.Map` with 55-minute TTL (via `time.AfterFunc`; tokens expire in 1 hour).
@@ -198,7 +198,7 @@ Error codes: `AUTH_ERROR`, `DB_ERROR`, `API_ERROR`, `CONFLICT`, `RATE_LIMIT_EXCE
 whoop-stats/
 ├── cmd/
 │   ├── server/main.go              # Main server entrypoint (-mode poll|webhook)
-│   └── auth/main.go                # OAuth2 token bootstrap CLI (unprefixed env vars)
+│   └── auth/main.go                # OAuth2 token bootstrap CLI (unprefixed env vars, auto-detects User ID)
 ├── internal/
 │   ├── api/                        # HTTP handlers + chi router
 │   │   ├── server.go               # Router setup, middleware wiring, route registration
@@ -305,6 +305,7 @@ whoop-stats/
 ├── web/Dockerfile                  # Multi-stage Next.js standalone build (non-root nextjs)
 ├── docker-compose.yml              # Dev compose (bind mounts, exposed ports)
 ├── docker-compose.prod.yml         # Prod compose (named volumes, networks, read-only mounts)
+├── setup.sh                        # Interactive setup wizard (auto-generates secrets, OAuth, User ID)
 ├── GEMINI.md                       # AI system rules (root level)
 ├── README.md                       # Project README with architecture diagrams
 ├── .env.example                    # Documented environment variable template
@@ -402,10 +403,10 @@ All **backend** env vars use the `WHOOP_STATS_` prefix (via Viper). The `cmd/aut
 
 ### CI Pipeline (`ci.yml`)
 Runs on pushes and PRs to `main`. Two jobs:
-- **Backend** (Go 1.22, ubuntu-latest): build → vet → unit tests (crypto, middleware, config, timezone, poller)
+- **Backend** (Go 1.25, ubuntu-latest): build → vet → unit tests (crypto, middleware, config, timezone, poller)
 - **Frontend** (Node.js 20, ubuntu-latest): npm ci → lint (ESLint 9) → build (`NEXT_TELEMETRY_DISABLED=1`)
 
-> **Note:** CI uses Go 1.22 but `go.mod` specifies 1.25.0 — these should be aligned.
+> **Note:** CI Go version is aligned with `go.mod` at 1.25.
 
 ### Publish Pipeline (`publish.yml`)
 Runs on pushes to `main` and version tags (`v*`). Publishes Docker images to GHCR:

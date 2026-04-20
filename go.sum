@@ -8,8 +8,8 @@ github.com/KyleBanks/depth v1.2.1 h1:5h8fQADFrWtarTdtDudMmGsC7GPbOAu6RVB3ffsVFHc
 github.com/KyleBanks/depth v1.2.1/go.mod h1:jzSb9d0L43HxTQfT+oSA1EEp2q+ne2uh6XgeJcm8brE=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
-github.com/arvarik/whoop-go v1.1.0 h1:aox53OV0HaLCr+5RMhDCpJ3moh69HC73N11U8lN1zMI=
-github.com/arvarik/whoop-go v1.1.0/go.mod h1:OVUCicWp5v3ff89n57SOjyQSWhEx+aoFS0z40BFXecQ=
+github.com/arvarik/whoop-go v1.2.0 h1:G81WsV6ujxSd/p5ka6zqUO27aQurzSKFBYrh6x+3T8c=
+github.com/arvarik/whoop-go v1.2.0/go.mod h1:OVUCicWp5v3ff89n57SOjyQSWhEx+aoFS0z40BFXecQ=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
 github.com/cenkalti/backoff/v4 v4.3.0/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyYozVcomhLiZE=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=

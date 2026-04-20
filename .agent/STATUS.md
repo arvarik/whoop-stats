@@ -1,10 +1,10 @@
 # whoop-stats Status
-Last updated: 2026-04-14
+Last updated: 2026-04-20
 
 _This file tracks the current state of development. It is the single source of truth for "where am I?" Agents must update this file after completing tasks or making progress._
 
 ## Current Objective
-Hardening `.agent/` documentation suite for accuracy and comprehensiveness.
+Awaiting next feature assignment.
 
 ## Completed Work
 
@@ -58,29 +58,31 @@ Hardening `.agent/` documentation suite for accuracy and comprehensiveness.
 - [x] `.env.example` with documented variable template
 - [x] `.gitignore` with `.env`, `.whoop_token.json`, `web/.next`, `bin/`
 
+### Setup & Onboarding
+- [x] Interactive setup wizard (`setup.sh`) — auto-generates secrets, prompts for WHOOP credentials, runs OAuth, validates config
+- [x] Auth CLI auto-detects WHOOP User ID via profile API after OAuth flow
+- [x] Auth CLI auto-writes `WHOOP_USER_ID` to `.env`
+- [x] `setup.sh --validate` mode for config-only validation
+- [x] Fixed `docker-compose.prod.yml` — 7 deployment-blocking issues resolved (Dockerfile ref, env prefix, migration mount, API URL, user flag, frontend vars)
+
 ### Documentation
 - [x] README.md with architecture diagrams (Mermaid)
 - [x] `.agent/` documentation suite (ARCHITECTURE, PHILOSOPHY, STYLE, TESTING, STATUS)
 - [x] GEMINI.md system rules
 
 ## Known Issues
-- `docker-compose.prod.yml` references `Dockerfile.frontend` (line 63) but the actual file is `web/Dockerfile` — **will cause prod build failure**.
-- `docker-compose.prod.yml` backend env vars missing `WHOOP_STATS_` prefix for several variables (`ENCRYPTION_KEY`, `WHOOP_CLIENT_ID`, `WHOOP_CLIENT_SECRET`, `WHOOP_WEBHOOK_SECRET`, `CORS_ALLOWED_ORIGINS`, `LOG_LEVEL`, `POLL_INTERVAL_*`). These won't be picked up by Viper.
-- CI uses Go 1.22 but `go.mod` specifies Go 1.25.0 — should be aligned.
-- `docker-compose.prod.yml` frontend uses `WHOOP_STATS_TOKEN` env var which doesn't exist in code — should be `WHOOP_STATS_ENCRYPTION_KEY` + `WHOOP_STATS_WHOOP_USER_ID`.
-- `docker-compose.prod.yml` prod compose doesn't mount the init migration into TimescaleDB (unlike dev compose).
-- `docker-compose.prod.yml` frontend `NEXT_PUBLIC_API_URL` points to `http://localhost:8082` which won't work for server-side fetching inside the Docker network — should be `http://backend:8080`.
+- ~~`docker-compose.prod.yml` references `Dockerfile.frontend` (line 63) but the actual file is `web/Dockerfile`~~ — **FIXED** (changed to `Dockerfile`)
+- ~~`docker-compose.prod.yml` backend env vars missing `WHOOP_STATS_` prefix for several variables~~ — **FIXED** (all env vars now use `WHOOP_STATS_` prefix)
+- ~~CI uses Go 1.22 but `go.mod` specifies Go 1.25.0~~ — **FIXED** (`ci.yml` updated to Go 1.25)
+- ~~`docker-compose.prod.yml` frontend uses `WHOOP_STATS_TOKEN` env var which doesn't exist~~ — **FIXED** (replaced with `WHOOP_STATS_ENCRYPTION_KEY` + `WHOOP_STATS_WHOOP_USER_ID`)
+- ~~`docker-compose.prod.yml` prod compose doesn't mount the init migration into TimescaleDB~~ — **FIXED** (added migration mount + `shm_size: 256mb`)
+- ~~`docker-compose.prod.yml` frontend `NEXT_PUBLIC_API_URL` points to `http://localhost:8082`~~ — **FIXED** (changed to `http://backend:8080` for Docker-internal SSR fetching)
+- ~~`docker-compose.prod.yml` backend command missing `-user` flag~~ — **FIXED** (added `-user` flag with `WHOOP_USER_ID` env var + validation)
 
 ## What's Next
-- Fix prod Docker Compose (`docker-compose.prod.yml`):
-  - Correct Dockerfile reference to `Dockerfile` (not `Dockerfile.frontend`)
-  - Add `WHOOP_STATS_` prefix to all backend env vars
-  - Fix frontend env vars (`WHOOP_STATS_ENCRYPTION_KEY`, `WHOOP_STATS_WHOOP_USER_ID`)
-  - Mount init migration for TimescaleDB
-  - Fix `NEXT_PUBLIC_API_URL` for Docker networking
-- Align CI Go version with `go.mod` (1.22 → 1.25)
 - Consider adding `testcontainers-go` integration tests to CI
 - Implement retry logic with exponential backoff for failed webhook events
+- Add `restart: unless-stopped` to prod compose services (parity with dev compose)
 
 ## Dashboard Routes
 | Route | Page |
