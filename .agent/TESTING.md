@@ -252,3 +252,10 @@ These must pass before any release:
 | sqlc generation is clean | _YYYY-MM-DD_ | `sqlc generate && git diff --exit-code internal/db/` |
 | Docker backend builds | _YYYY-MM-DD_ | `docker build -f Dockerfile.backend .` |
 | Docker frontend builds | _YYYY-MM-DD_ | `docker build -f web/Dockerfile ./web` |
+
+### Backend Route Coverage
+
+| Route | Method | Auth | Contract Test | Integration Test |
+|-------|--------|------|---------------|------------------|
+| _Fill in your routes_ | | | | |
+

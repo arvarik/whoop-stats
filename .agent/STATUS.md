@@ -1,4 +1,6 @@
 # whoop-stats Status
+[STATE: SHIPPED]
+
 Last updated: 2026-04-20
 
 _This file tracks the current state of development. It is the single source of truth for "where am I?" Agents must update this file after completing tasks or making progress._
