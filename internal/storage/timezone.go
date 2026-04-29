@@ -3,6 +3,7 @@ package storage
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -37,6 +38,7 @@ func ParseTimezoneOffset(offsetStr string) pgtype.Interval {
 		return pgtype.Interval{Valid: false}
 	}
 
-	totalMicros := sign * ((hours * 3600) + (mins * 60)) * 1000000
+	duration := time.Duration(hours)*time.Hour + time.Duration(mins)*time.Minute
+	totalMicros := sign * duration.Microseconds()
 	return pgtype.Interval{Microseconds: totalMicros, Valid: true}
 }
