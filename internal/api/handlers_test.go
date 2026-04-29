@@ -47,6 +47,7 @@ func TestParseCursor(t *testing.T) {
 		{"Valid cursor", validTimeStr, false},
 		{"Empty cursor", "", false},
 		{"Invalid cursor", "not-a-date", true},
+		{"Long cursor", "2023-01-01T00:00:00.000000000Z00:00-extra-long-padding-to-exceed-64-chars", true},
 	}
 
 	for _, tt := range tests {

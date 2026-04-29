@@ -153,6 +153,9 @@ func parseCursor(r *http.Request) (pgtype.Timestamptz, error) {
 	if cursorStr == "" {
 		return pgtype.Timestamptz{Time: time.Now(), Valid: true}, nil
 	}
+	if len(cursorStr) > 64 {
+		return pgtype.Timestamptz{}, http.ErrAbortHandler
+	}
 	t, err := time.Parse(time.RFC3339Nano, cursorStr)
 	if err != nil {
 		return pgtype.Timestamptz{}, err
