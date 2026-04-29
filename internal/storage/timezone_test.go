@@ -2,6 +2,7 @@ package storage
 
 import (
 	"testing"
+	"time"
 )
 
 func TestParseTimezoneOffset(t *testing.T) {
@@ -27,31 +28,31 @@ func TestParseTimezoneOffset(t *testing.T) {
 			name:          "negative offset -0500",
 			input:         "-0500",
 			wantValid:     true,
-			wantMicrosecs: -5 * 3600 * 1000000,
+			wantMicrosecs: -5 * time.Hour.Microseconds(),
 		},
 		{
 			name:          "positive offset +0200",
 			input:         "+0200",
 			wantValid:     true,
-			wantMicrosecs: 2 * 3600 * 1000000,
+			wantMicrosecs: 2 * time.Hour.Microseconds(),
 		},
 		{
 			name:          "colon format +02:00",
 			input:         "+02:00",
 			wantValid:     true,
-			wantMicrosecs: 2 * 3600 * 1000000,
+			wantMicrosecs: 2 * time.Hour.Microseconds(),
 		},
 		{
 			name:          "colon format -05:30",
 			input:         "-05:30",
 			wantValid:     true,
-			wantMicrosecs: -(5*3600 + 30*60) * 1000000,
+			wantMicrosecs: -(5*time.Hour + 30*time.Minute).Microseconds(),
 		},
 		{
 			name:          "positive with minutes +0530",
 			input:         "+0530",
 			wantValid:     true,
-			wantMicrosecs: (5*3600 + 30*60) * 1000000,
+			wantMicrosecs: (5*time.Hour + 30*time.Minute).Microseconds(),
 		},
 		{
 			name:      "malformed - too short",
