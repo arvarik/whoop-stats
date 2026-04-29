@@ -44,6 +44,10 @@ type Manager struct {
 	// Entries are evicted 55 minutes after creation (WHOOP tokens expire in 1 hour).
 	clientCache   sync.Map
 	clientMutexes sync.Map
+
+	// idCache maps whoop_user_id to internal pgtype.UUID.
+	// These mappings are immutable and never expire.
+	idCache sync.Map
 }
 
 // NewManager creates a new auth Manager with the given configuration.
@@ -97,6 +101,9 @@ func (m *Manager) GetClient(ctx context.Context, whoopUserID string) (*whoop.Cli
 		m.logger.Info("Loaded user tokens from offline JSON")
 	}
 
+	// Ensure ID is cached for GetInternalUserID fast-path
+	m.idCache.Store(whoopUserID, user.ID)
+
 	// Decrypt refresh token
 	encryptionKey := []byte(m.cfg.EncryptionKey)
 	refreshToken, err := crypto.Decrypt(user.EncryptedRefreshToken, encryptionKey)
@@ -148,10 +155,16 @@ func (m *Manager) GetClient(ctx context.Context, whoopUserID string) (*whoop.Cli
 
 // GetInternalUserID maps a WHOOP user ID to the internal database UUID.
 func (m *Manager) GetInternalUserID(ctx context.Context, whoopUserID string) (pgtype.UUID, error) {
+	if cached, ok := m.idCache.Load(whoopUserID); ok {
+		return cached.(pgtype.UUID), nil
+	}
+
 	user, err := m.db.GetUserByWhoopID(ctx, whoopUserID)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("looking up user %q: %w", whoopUserID, err)
 	}
+
+	m.idCache.Store(whoopUserID, user.ID)
 	return user.ID, nil
 }
 
@@ -182,11 +195,15 @@ func (m *Manager) loadFromOfflineJSON(ctx context.Context, whoopUserID string) (
 		return db.User{}, fmt.Errorf("encrypting offline refresh token: %w", err)
 	}
 
-	return m.db.UpsertUser(ctx, db.UpsertUserParams{
+	user, err := m.db.UpsertUser(ctx, db.UpsertUserParams{
 		WhoopUserID:           whoopUserID,
 		EncryptedAccessToken:  encAccess,
 		EncryptedRefreshToken: encRefresh,
 	})
+	if err == nil {
+		m.idCache.Store(whoopUserID, user.ID)
+	}
+	return user, err
 }
 
 // persistToJSON writes refreshed tokens back to .whoop_token.json.
