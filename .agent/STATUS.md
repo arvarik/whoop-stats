@@ -45,7 +45,7 @@ Awaiting next feature assignment.
 - [x] Global error boundary (`error.tsx`) with glass-card retry UI
 - [x] Skeleton loading state (`loading.tsx`) matching dashboard layout
 - [x] Display formatters (`format.ts`): duration, dates, calories, recovery colors, HR zones
-- [x] Statistical helpers (`stats.ts`): avg, stddev, percentChange
+- [x] Statistical helpers (`stats.ts`): avg, stddev
 - [x] Lazy env var validation in API client (prevents CI build failures)
 
 ### Infrastructure

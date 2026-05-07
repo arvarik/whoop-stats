@@ -69,7 +69,7 @@ The architecture is split into three core layers: **Database (TimescaleDB)**, **
 *   **openapi-fetch & openapi-typescript:** Type-safe API client generated from the Go backend's Swagger specification. Environment variables validated at module load with fail-fast errors.
 *   **Tailwind CSS v4 & Shadcn UI:** Utility-first styling combined with highly accessible, unstyled component primitives.
 *   **Recharts & Framer Motion:** High-end data visualization and fluid layout animations.
-*   **Shared Utilities:** `lib/stats.ts` provides `computeAvg`, `computeStdDev`, and `percentChange` — extracted from page components to avoid duplication.
+*   **Shared Utilities:** `lib/stats.ts` provides `computeAvg` and `computeStdDev` — extracted from page components to avoid duplication.
 
 ### Design Decisions & Justifications
 *   **Server-Side Data Fetching (RSC):** The dashboard performs zero client-side fetching for its initial load. Next.js fetches the profile, cycles, sleeps, and insights in parallel directly on the server. This completely eliminates layout shift (CLS) and "loading spinners cascading," delivering the fully populated HTML instantly to the browser.

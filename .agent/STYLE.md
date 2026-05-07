@@ -152,7 +152,7 @@ Use these instead of manually composing backdrop-blur classes.
 | File | Purpose |
 |------|---------|
 | `web/src/lib/format.ts` | Display formatters: `formatDuration()`, `formatShortDate()`, `formatFullDate()`, `formatTime()`, `formatDistance()`, `formatCalories()`, `getRecoveryColor()`, `getRecoveryColorValue()`, `getRecoveryLabel()`, `HR_ZONE_COLORS`, `HR_ZONE_LABELS` |
-| `web/src/lib/stats.ts` | Statistical helpers: `computeAvg()`, `computeStdDev()`, `percentChange()` |
+| `web/src/lib/stats.ts` | Statistical helpers: `computeAvg()`, `computeStdDev()` |
 | `web/src/lib/types.ts` | Shared types: `ApiRecord = Record<string, any>` (escape hatch for untyped API responses) |
 | `web/src/lib/utils.ts` | `cn()` — conditional className merge via `clsx` + `tailwind-merge` |
 
