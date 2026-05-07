@@ -293,7 +293,7 @@ whoop-stats/
 │       ├── api/client.ts           # openapi-fetch client with JWT injection
 │       ├── api/schema.d.ts         # Auto-generated TypeScript types from OpenAPI
 │       ├── format.ts               # Display formatters (duration, dates, calories, recovery colors, HR zones)
-│       ├── stats.ts                # Statistical helpers (avg, stddev, percentChange)
+│       ├── stats.ts                # Statistical helpers (avg, stddev)
 │       ├── stats.test.ts           # Stats utility tests
 │       ├── types.ts                # Shared types (ApiRecord)
 │       └── utils.ts                # Utility functions (cn via clsx + tailwind-merge)

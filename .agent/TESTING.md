@@ -130,7 +130,7 @@ docker run --rm whoop-stats-frontend whoami  # should print "nextjs"
 | File | Tests | Runner |
 |------|-------|--------|
 | `web/src/components/ui/chart.test.ts` | Chart component unit tests | `node --experimental-strip-types --test` |
-| `web/src/lib/stats.test.ts` | Stats utility tests (computeAvg, computeStdDev, percentChange) | `node --experimental-strip-types --test` |
+| `web/src/lib/stats.test.ts` | Stats utility tests (computeAvg, computeStdDev) | `node --experimental-strip-types --test` |
 
 ## 3. CI Pipeline
 

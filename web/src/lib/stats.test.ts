@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeAvg, computeStdDev, percentChange } from './stats.ts';
+import { computeAvg, computeStdDev } from './stats.ts';
 
 test('stats utilities', async (t) => {
   await t.test('computeAvg', async (t) => {
@@ -46,25 +46,4 @@ test('stats utilities', async (t) => {
     });
   });
 
-  await t.test('percentChange', async (t) => {
-    await t.test('computes positive change correctly', () => {
-      assert.strictEqual(percentChange(10, 5), 100);
-    });
-
-    await t.test('computes negative change correctly', () => {
-      assert.strictEqual(percentChange(5, 10), -50);
-    });
-
-    await t.test('computes zero change correctly', () => {
-      assert.strictEqual(percentChange(5, 5), 0);
-    });
-
-    await t.test('returns null when previous value is 0', () => {
-      assert.strictEqual(percentChange(10, 0), null);
-    });
-
-    await t.test('computes correctly when current value is 0', () => {
-      assert.strictEqual(percentChange(0, 10), -100);
-    });
-  });
 });

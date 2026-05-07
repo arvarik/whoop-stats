@@ -16,8 +16,3 @@ export function computeStdDev(arr: number[]): number | null {
   return Math.sqrt(variance);
 }
 
-/** Compute the percentage change between two values. */
-export function percentChange(current: number, previous: number): number | null {
-  if (!previous) return null;
-  return ((current - previous) / previous) * 100;
-}
