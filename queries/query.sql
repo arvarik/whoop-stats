@@ -40,6 +40,10 @@ ON CONFLICT (id) DO UPDATE SET
     last_name = EXCLUDED.last_name,
     updated_at = EXCLUDED.updated_at;
 
+-- name: GetUserProfile :one
+SELECT * FROM user_profiles
+WHERE id = $1 LIMIT 1;
+
 -- name: UpsertBodyMeasurement :exec
 INSERT INTO body_measurements (id, height_meter, weight_kilogram, max_heart_rate, updated_at)
 VALUES ($1, $2, $3, $4, $5)

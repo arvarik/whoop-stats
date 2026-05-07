@@ -174,6 +174,21 @@ func parseCursor(r *http.Request) (pgtype.Timestamptz, error) {
 // @Router /api/v1/user/profile [get]
 // @Security BearerAuth
 func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.validateUserID(w, r)
+	if !ok {
+		return
+	}
+
+	// Fast path: Fetch from local database cache
+	profile, err := h.storage.GetUserProfile(r.Context(), userID)
+	if err == nil {
+		sendJSON(w, profile)
+		return
+	}
+
+	// Slow path: Fallback to WHOOP API if not in database
+	h.logger.Info("Profile not found in database, falling back to WHOOP API", "user_id", userID)
+
 	whoopUserID := h.getWhoopUserID(r)
 	client, err := h.authManager.GetClient(r.Context(), whoopUserID)
 	if err != nil {
@@ -182,11 +197,16 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := client.User.GetBasicProfile(r.Context())
+	profile, err = client.User.GetBasicProfile(r.Context())
 	if err != nil {
-		h.logger.Error("Failed to fetch profile", "error", err)
+		h.logger.Error("Failed to fetch profile from WHOOP", "error", err)
 		sendError(w, "API_ERROR", "Failed to fetch profile from WHOOP", http.StatusInternalServerError)
 		return
+	}
+
+	// Update cache
+	if err := h.storage.UpsertUserProfile(r.Context(), userID, profile); err != nil {
+		h.logger.Warn("Failed to update user profile cache", "error", err)
 	}
 
 	sendJSON(w, profile)

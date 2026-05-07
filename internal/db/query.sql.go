@@ -40,6 +40,26 @@ func (q *Queries) CreateWebhookEvent(ctx context.Context, arg CreateWebhookEvent
 	return i, err
 }
 
+const getUserProfile = `-- name: GetUserProfile :one
+SELECT id, whoop_user_id, email, first_name, last_name, created_at, updated_at FROM user_profiles
+WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetUserProfile(ctx context.Context, id pgtype.UUID) (UserProfile, error) {
+	row := q.db.QueryRow(ctx, getUserProfile, id)
+	var i UserProfile
+	err := row.Scan(
+		&i.ID,
+		&i.WhoopUserID,
+		&i.Email,
+		&i.FirstName,
+		&i.LastName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getCycles = `-- name: GetCycles :many
 SELECT id, user_id, start_time, end_time, timezone_offset, strain, kilojoule, average_heart_rate, max_heart_rate, score_state, created_at, updated_at FROM cycles
 WHERE user_id = $1 AND start_time < $2

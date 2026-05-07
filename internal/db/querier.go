@@ -27,6 +27,7 @@ type Querier interface {
 	GetSleeps(ctx context.Context, arg GetSleepsParams) ([]Sleep, error)
 	GetUser(ctx context.Context, id pgtype.UUID) (User, error)
 	GetUserByWhoopID(ctx context.Context, whoopUserID string) (User, error)
+	GetUserProfile(ctx context.Context, id pgtype.UUID) (UserProfile, error)
 	GetWorkouts(ctx context.Context, arg GetWorkoutsParams) ([]Workout, error)
 	UpdateWebhookEventStatus(ctx context.Context, arg UpdateWebhookEventStatusParams) error
 	UpdateWebhookEventStatuses(ctx context.Context, arg UpdateWebhookEventStatusesParams) error
