@@ -444,6 +444,21 @@ func (s *Storage) UpsertWorkouts(ctx context.Context, userID pgtype.UUID, workou
 	return nil
 }
 
+// GetUserProfile fetches the user's basic WHOOP profile from the database.
+func (s *Storage) GetUserProfile(ctx context.Context, userID pgtype.UUID) (*whoop.BasicProfile, error) {
+	row, err := s.db.GetUserProfile(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &whoop.BasicProfile{
+		UserID:    int(row.WhoopUserID),
+		Email:     row.Email.String,
+		FirstName: row.FirstName.String,
+		LastName:  row.LastName.String,
+	}, nil
+}
+
 // UpsertUserProfile persists the user's basic WHOOP profile.
 func (s *Storage) UpsertUserProfile(ctx context.Context, userID pgtype.UUID, profile *whoop.BasicProfile) error {
 	err := s.db.UpsertUserProfile(ctx, db.UpsertUserProfileParams{
